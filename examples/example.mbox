@@ -1,0 +1,67 @@
+From example@example.invalid Wed Jan 15 12:00:00 2025
+From: Alex Example <alex@example.invalid>
+To: Sam Example <sam@example.invalid>
+Subject: Welcome to your email archive
+Message-ID: <welcome@example.invalid>
+Date: Wed, 15 Jan 2025 12:00:00 +0000
+X-Gmail-Labels: Inbox, Example
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+VGhpcyBpcyBhIGZpY3Rpb25hbCBleGFtcGxlLiBTZWFyY2ggZm9yIG9yY2hhcmQgdG8gZmluZCB0aGlzIG1lc3NhZ2UgYnkgaXRzIGJvZHkuCllvdXIgcmVhbCBtYWlsIGJlbG9uZ3MgaW4gYSBzZXBhcmF0ZSBwcml2YXRlIGFyY2hpdmUgZm9sZGVyLgpVbmljb2RlIHdvcmtzIHRvbzogY2Fmw6ksIG5hw692ZSwgcsOpc3Vtw6ku
+
+From example@example.invalid Wed Jan 15 12:00:00 2025
+From: Alex Example <alex@example.invalid>
+To: Sam Example <sam@example.invalid>
+Subject: A tiny trip plan
+Message-ID: <trip@example.invalid>
+Date: Wed, 15 Jan 2025 12:00:00 +0000
+X-Gmail-Labels: Travel, Example
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mixed"
+
+--mixed
+Content-Type: text/html; charset=utf-8
+
+<h2>A tiny trip plan</h2><p>A fictional weekend at the <strong>orchard</strong>.</p><p>The embedded image below is a one-pixel PNG used to demonstrate CID handling.</p><img src="cid:pixel" alt="Embedded example pixel"><p>Open the attached itinerary for the three planned activities.</p>
+--mixed
+Content-Type: image/png
+Content-ID: <pixel>
+Content-Disposition: inline; filename="example-pixel.png"
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aH2kAAAAASUVORK5CYII=
+--mixed
+Content-Type: text/plain; charset=utf-8
+Content-Disposition: attachment; filename="itinerary.txt"
+Content-Transfer-Encoding: base64
+
+RmljdGlvbmFsIGl0aW5lcmFyeQoxLiBWaXNpdCB0aGUgb3JjaGFyZC4KMi4gU2hhcmUgYSBwaWNuaWMuCjMuIFdhdGNoIHRoZSBzdW5zZXQuCg==
+--mixed--
+
+From example@example.invalid Wed Jan 15 12:00:00 2025
+From: Alex Example <alex@example.invalid>
+To: Sam Example <sam@example.invalid>
+Subject: A February follow-up
+Message-ID: <followup@example.invalid>
+Date: Mon, 03 Feb 2025 10:00:00 +0000
+X-Gmail-Labels: Work, Example
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+VGhlIGZpY3Rpb25hbCBwcm9qZWN0IGhhcyByZWFjaGVkIGl0cyBuZXh0IG1pbGVzdG9uZS4gU2VhcmNoIGZvciBsaWdodGhvdXNlIHRvIGZpbmQgdGhpcyBtZXNzYWdlLg==
+
+From example@example.invalid Wed Jan 15 12:00:00 2025
+From: Alex Example <alex@example.invalid>
+To: Sam Example <sam@example.invalid>
+Subject: A note without a date
+Message-ID: <undated@example.invalid>
+X-Gmail-Labels: Notes, Example
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+VGhpcyBleGFtcGxlIGludGVudGlvbmFsbHkgaGFzIG5vIERhdGUgaGVhZGVyLiBJdCBpcyBzdG9yZWQgaW4gdW5rbm93bi1kYXRlLg==
+

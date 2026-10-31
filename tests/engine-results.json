@@ -1,0 +1,85 @@
+{
+  "checks": [
+    {
+      "name": "First import stores four messages",
+      "pass": true
+    },
+    {
+      "name": "Repeated import adds no messages",
+      "pass": true
+    },
+    {
+      "name": "Repeated import adds no HTML or attachment files",
+      "pass": true
+    },
+    {
+      "name": "Overlapping export adds only the new message",
+      "pass": true
+    },
+    {
+      "name": "Old messages remain present",
+      "pass": true
+    },
+    {
+      "name": "Gmail labels are merged",
+      "pass": true
+    },
+    {
+      "name": "Missing dates use the English folder",
+      "pass": true
+    },
+    {
+      "name": "Metadata and text shards use the English catalog path",
+      "pass": true
+    },
+    {
+      "name": "Standalone message has English headers",
+      "pass": true
+    },
+    {
+      "name": "CID is a local attachment URL",
+      "pass": true
+    },
+    {
+      "name": "Attachment paths are ASCII",
+      "pass": true
+    },
+    {
+      "name": "Label-only update keeps attachment paths and files",
+      "pass": true
+    },
+    {
+      "name": "Same Message-ID cannot discard different content",
+      "pass": true
+    },
+    {
+      "name": "Missing IDs deduplicate by content",
+      "pass": true
+    },
+    {
+      "name": "Active HTML and remote sources are removed",
+      "pass": true
+    },
+    {
+      "name": "Cancellation commits completed messages",
+      "pass": true
+    },
+    {
+      "name": "Retry after cancellation adds only remaining messages",
+      "pass": true
+    },
+    {
+      "name": "Concurrent writer is rejected",
+      "pass": true
+    },
+    {
+      "name": "Long folded headers do not hide a message boundary",
+      "pass": true
+    },
+    {
+      "name": "Installer creates a blank archive without examples",
+      "pass": true
+    }
+  ],
+  "passed": 20
+}

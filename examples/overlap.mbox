@@ -1,0 +1,26 @@
+From example@example.invalid Wed Jan 15 12:00:00 2025
+From: Alex Example <alex@example.invalid>
+To: Sam Example <sam@example.invalid>
+Subject: Welcome to your email archive
+Message-ID: <welcome@example.invalid>
+Date: Wed, 15 Jan 2025 12:00:00 +0000
+X-Gmail-Labels: Inbox, Example, Saved
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+VGhpcyBpcyBhIGZpY3Rpb25hbCBleGFtcGxlLiBTZWFyY2ggZm9yIG9yY2hhcmQgdG8gZmluZCB0aGlzIG1lc3NhZ2UgYnkgaXRzIGJvZHkuCllvdXIgcmVhbCBtYWlsIGJlbG9uZ3MgaW4gYSBzZXBhcmF0ZSBwcml2YXRlIGFyY2hpdmUgZm9sZGVyLgpVbmljb2RlIHdvcmtzIHRvbzogY2Fmw6ksIG5hw692ZSwgcsOpc3Vtw6ku
+
+From example@example.invalid Wed Jan 15 12:00:00 2025
+From: Alex Example <alex@example.invalid>
+To: Sam Example <sam@example.invalid>
+Subject: One more example
+Message-ID: <extra@example.invalid>
+Date: Mon, 10 Mar 2025 09:00:00 +0000
+X-Gmail-Labels: Example
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: base64
+
+QSBmaWN0aW9uYWwgbWVzc2FnZSBhZGRlZCBieSB0aGUgb3ZlcmxhcHBpbmcgaW1wb3J0IHRlc3Qu
+

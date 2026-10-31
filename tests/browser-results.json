@@ -1,0 +1,61 @@
+{
+  "browser": "155.0.8059.81",
+  "checks": [
+    {
+      "name": "Four examples load from file:// offline",
+      "pass": true
+    },
+    {
+      "name": "Page language is English",
+      "pass": true
+    },
+    {
+      "name": "Full-text body search",
+      "pass": true
+    },
+    {
+      "name": "Accent-insensitive search",
+      "pass": true
+    },
+    {
+      "name": "Label filter",
+      "pass": true
+    },
+    {
+      "name": "CID image opens offline",
+      "pass": true
+    },
+    {
+      "name": "Standalone message is English",
+      "pass": true
+    },
+    {
+      "name": "Standalone message has no scripts",
+      "pass": true
+    },
+    {
+      "name": "Text attachment opens through a relative link",
+      "pass": true
+    },
+    {
+      "name": "Date filter",
+      "pass": true
+    },
+    {
+      "name": "Account and archive root have distinct English labels",
+      "pass": true
+    },
+    {
+      "name": "Moved archive opens in a fresh browser context",
+      "pass": true
+    },
+    {
+      "name": "No HTTP(S) requests",
+      "pass": true
+    },
+    {
+      "name": "No JavaScript errors",
+      "pass": true
+    }
+  ]
+}

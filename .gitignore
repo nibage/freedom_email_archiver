@@ -1,0 +1,22 @@
+# Ignore unexpected root content, especially new private account folders.
+/*
+!/.gitignore
+!/README.md
+!/GUIDE.html
+!/LICENSE
+!/SECURITY.md
+!/THIRD_PARTY_NOTICES.md
+!/index.html
+!/archive.js
+!/archive.previous.js
+!/assets/
+!/example/
+!/examples/
+!/scripts/
+!/tests/
+archive.lock
+**/*.crswap
+**/*.test-write
+**/import-*.json
+node_modules/
+# This cannot prevent secrets in tracked files: use a separate private archive root.
