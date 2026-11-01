@@ -1,0 +1,1 @@
+MailArchive.receive({"kind":"manifest","format":1,"generation":1,"accounts":["example"],"segments":[{"meta":"example/catalog/b90fcfbf-adb5-462c-862f-fa673441850c.js","search":"example/catalog/b90fcfbf-adb5-462c-862f-fa673441850c-text.js","count":4}],"total":4,"updated":"2026-10-31T18:17:37.353Z"});
