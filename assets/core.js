@@ -18,7 +18,15 @@ async function read(root,p){return (await (await fileHandle(root,p)).getFile()).
 async function exists(root,p){try{await fileHandle(root,p);return true;}catch(e){if(e.name==='NotFoundError')return false;throw e;}}
 const empty=()=>({kind:'manifest',format:VERSION,generation:0,accounts:[],segments:[],total:0,created:new Date().toISOString()});
 function checkManifest(m){if(m.kind!=='manifest'||m.format!==VERSION||!Array.isArray(m.segments)||!Array.isArray(m.accounts))throw Error('FORMAT');return m;}
-async function manifest(root){try{return checkManifest(unwrap(await read(root,'archive.js')));}catch(e){if(e.name==='NotFoundError'){if(await exists(root,'archive.previous.js'))return checkManifest(unwrap(await read(root,'archive.previous.js')));return empty();}try{return checkManifest(unwrap(await read(root,'archive.previous.js')));}catch{throw Error('CATALOG');}}}
+const MANIFEST='assets/catalog/archive.js',PREVIOUS='assets/catalog/archive.previous.js';
+async function manifest(root){
+ for(const [current,backup] of [[MANIFEST,PREVIOUS],['archive.js','archive.previous.js']]){
+  if(!await exists(root,current)&&!await exists(root,backup))continue;
+  try{return checkManifest(unwrap(await read(root,current)));}
+  catch{try{return checkManifest(unwrap(await read(root,backup)));}catch{throw Error('CATALOG');}}
+ }
+ return empty();
+}
 // Read bounded chunks. A large/invalid line cannot grow the scanner's memory indefinitely.
 async function* lines(file,signal){let pending=new Uint8Array(0),offset=0;for(let p=0;p<file.size;p+=CHUNK){if(signal?.aborted)return;const buf=new Uint8Array(await file.slice(p,p+CHUNK).arrayBuffer());let start=0;for(let i=buf.indexOf(10);i>=0;i=buf.indexOf(10,start)){let line=buf.subarray(start,i+1);if(pending.length){const n=new Uint8Array(pending.length+line.length);n.set(pending);n.set(line,pending.length);line=n;pending=new Uint8Array(0);}yield {bytes:line,offset};offset+=line.length;start=i+1;}if(start<buf.length){const rest=buf.subarray(start);const n=new Uint8Array(pending.length+rest.length);n.set(pending);n.set(rest,pending.length);pending=n;if(pending.length>LIMIT)throw Error('LINE_TOO_LARGE');}}if(pending.length)yield {bytes:pending,offset};}
 const envelope=/^From \S+ (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) +\d{1,2} \d{2}:\d{2}(?::\d{2})?(?: [A-Z0-9+:-]+)? \d{4}(?: .*)?\r?\n?$/;
@@ -63,7 +71,7 @@ async function prepare(bytes,account,depth=0){
  for(let i=0;i<atts.length;i++){
   const {source:a,hash:ah}=atts[i];let name=safeName(a.filename||('attachment-'+(i+1)+(a.mimeType==='message/rfc822'?'.eml':'')));
   const quarantine=extensionSafe(name,a.mimeType);const stored=ah+(/(\.[a-z0-9]{1,12})$/i.exec(name)?.[1].toLowerCase()||'.bin')+(quarantine?'.download':'');const href='attachments/'+encodeURIComponent(stored);files.push({path:folder+'/attachments/'+stored,bytes:a.content});
-  const am={name,href,size:a.content.byteLength,type:a.mimeType,quarantined:quarantine};
+  const am={name,href,size:a.content.byteLength,type:a.mimeType,quarantined:quarantine,sha256:ah,contentId:a.contentId||'',disposition:a.disposition||'',originalName:a.filename||''};
   const cid=(a.contentId||'').replace(/^<|>$/g,'');if(cid&&/^image\/(png|jpeg|gif|webp|bmp)$/i.test(a.mimeType)&&!quarantine)cids[cid]=href;
   if(a.mimeType==='message/rfc822'&&depth<3){try{const nested=await prepare(new Uint8Array(a.content),account,depth+1);const preview='v-'+ah+'.html';am.preview='attachments/'+preview;
     // Flatten embedded-message assets into the same attachment folder. No deep Windows paths.
@@ -75,7 +83,17 @@ async function prepare(bytes,account,depth=0){
   attachmentMeta.push(am);
  }
  const clean=cleanHTML(m.html||'',cids);const body=m.html?clean.html:'<pre>'+esc(m.text||'')+'</pre>';
- const meta={id,account,path:filepath,folder,fingerprint,messageId,subject:m.subject||'',from:idHeaders.from,to:idHeaders.to,cc:idHeaders.cc,bcc:idHeaders.bcc,date:di.date,day:di.day,rawDate:di.raw,labels:labels(m),attachments:attachmentMeta,bytes:bytes.length};
+ const mime={
+   note:'Decoded MIME metadata, not a byte-exact RFC 5322 source or verified signature',
+   headers:m.headers.map(h=>({name:h.key,value:String(h.value??'')})),
+   topLevelType:String(m.headers.find(h=>h.key==='content-type')?.value||'text/plain'),
+   mimeVersion:String(m.headers.find(h=>h.key==='mime-version')?.value||''),
+   transferEncoding:String(m.headers.find(h=>h.key==='content-transfer-encoding')?.value||''),
+   hasText:!!m.text,hasHtml:!!m.html,
+   signatureHeaders:m.headers.filter(h=>/^(dkim-signature|authentication-results|arc-seal|arc-message-signature|arc-authentication-results)$/.test(h.key)).map(h=>({name:h.key,value:String(h.value??'')})),
+   hasSignedMime:/multipart\/signed|application\/(?:pkcs7-mime|x-pkcs7-mime|pgp-signature)/i.test(m.headers.find(h=>h.key==='content-type')?.value||'')
+  };
+  const meta={id,account,path:filepath,folder,fingerprint,messageId,subject:m.subject||'',from:idHeaders.from,to:idHeaders.to,cc:idHeaders.cc,bcc:idHeaders.bcc,date:di.date,day:di.day,rawDate:di.raw,labels:labels(m),attachments:attachmentMeta,bytes:bytes.length,mime};
  return {meta,files,body,attachments:attachmentMeta,folder,text:norm([m.text||'',clean.text].join('\n'))};
 }
 class Importer{
@@ -86,14 +104,14 @@ class Importer{
   if(search)await write(this.root,search,wrap({kind:'search',records:this.search}));
   await write(this.root,meta,wrap({kind:'metadata',records:this.pending}));
   const next={...this.m,generation:this.m.generation+1,total:this.records.size,updated:new Date().toISOString(),accounts:[...new Set([...this.m.accounts,account])].sort(),segments:[...this.m.segments,{meta,search,count:this.pending.length}]};
-  await write(this.root,'archive.previous.js',wrap(this.m));await write(this.root,'archive.js',wrap(next));this.m=next;this.stats.committed+=this.pending.length;this.pending=[];this.search=[];this.searchBytes=0;this.onProgress({...this.stats});
+  await write(this.root,PREVIOUS,wrap(this.m));await write(this.root,MANIFEST,wrap(next));this.m=next;this.stats.committed+=this.pending.length;this.pending=[];this.search=[];this.searchBytes=0;this.onProgress({...this.stats});
  }
  async run(files,account){accountName(account);await this.lock();try{await this.open();this.stats.totalBytes=files.reduce((s,f)=>s+f.size,0);let base=0;
   for(const file of files){if(this.signal?.aborted)break;try{for await(const raw of mbox(file,{signal:this.signal,onBytes:n=>{this.stats.bytes=base+n;}})){
    if(this.signal?.aborted)break;this.stats.read++;let p;try{if(raw.error)throw Error(raw.error);p=await prepare(raw.bytes,account);}catch(e){this.stats.errors++;this.issues.push({file:file.name,offset:raw.offset,end:raw.end,code:['MESSAGE_TOO_LARGE','MALFORMED'].includes(e.message)?e.message:'MIME_ERROR'});this.onProgress({...this.stats});continue;}
    const key=account+'/'+p.meta.id;const old=this.records.get(key);
-   if(old){this.stats.duplicates++;const merged=[...new Set([...old.labels,...p.meta.labels])].sort();if(json(merged)!==json(old.labels)||this.refreshExisting){const labelChange=json(merged)!==json(old.labels);const updated={...old,labels:merged}; // Regenerate from the same canonical message; no new attachment files.
-     const links=new Map();for(const a of p.attachments){const digest=decodeURIComponent(a.href).split('/').pop().slice(0,64);const before=old.attachments.find(b=>b.name===a.name&&decodeURIComponent(b.href).split('/').pop().slice(0,64)===digest);if(before)links.set(a.href,before.href);}const template=document.createElement('template');template.innerHTML=p.body;for(const img of template.content.querySelectorAll('img[src]')){const mapped=links.get(img.getAttribute('src'));if(mapped)img.setAttribute('src',mapped);}await write(this.root,old.path,documentHTML(updated,template.innerHTML,old.attachments,'../'.repeat(old.folder.split('/').length)));this.records.set(key,updated);if(labelChange)this.pending.push(updated);if(this.refreshExisting)this.stats.refreshed++;}
+   if(old){this.stats.duplicates++;const merged=[...new Set([...old.labels,...p.meta.labels])].sort();if(json(merged)!==json(old.labels)||this.refreshExisting){const labelChange=json(merged)!==json(old.labels);const updated={...old,labels:merged,mime:p.meta.mime||old.mime}; // Regenerate from the same canonical message; no new attachment files.
+     const links=new Map();for(const a of p.attachments){const digest=decodeURIComponent(a.href).split('/').pop().slice(0,64);const before=old.attachments.find(b=>b.name===a.name&&decodeURIComponent(b.href).split('/').pop().slice(0,64)===digest);if(before)links.set(a.href,before.href);}const template=document.createElement('template');template.innerHTML=p.body;for(const img of template.content.querySelectorAll('img[src]')){const mapped=links.get(img.getAttribute('src'));if(mapped)img.setAttribute('src',mapped);}await write(this.root,old.path,documentHTML(updated,template.innerHTML,old.attachments,'../'.repeat(old.folder.split('/').length)));this.records.set(key,updated);this.pending.push(updated);if(this.refreshExisting)this.stats.refreshed++;}
    }else{for(const f of p.files)await write(this.root,f.path,f.bytes);await write(this.root,p.meta.path,documentHTML(p.meta,p.body,p.attachments,'../'.repeat(p.folder.split('/').length)));this.records.set(key,p.meta);this.pending.push(p.meta);this.search.push({key,text:p.text});this.searchBytes+=p.text.length*2;this.stats.new++;}
    if(this.pending.length>=this.batchSize||this.searchBytes>=4*1024*1024)await this.commit();this.onProgress({...this.stats});await new Promise(r=>setTimeout(r,0));
   }}catch(e){if(e.message==='LINE_TOO_LARGE'){this.stats.errors++;this.issues.push({file:file.name,code:'LINE_TOO_LARGE'});}else throw e;}base+=file.size;
@@ -101,6 +119,6 @@ class Importer{
   await this.commit();const report={format:1,finished:new Date().toISOString(),interrupted:!!this.signal?.aborted,stats:this.stats,issues:this.issues};await write(this.root,account+'/catalog/import-'+crypto.randomUUID()+'.json',json(report));return report;
  }finally{if(this.lockWriter){await this.lockWriter.close();this.lockWriter=null;}}}
 }
-g.ArchiveCore={VERSION,LIMIT,esc,fold,hash,json,wrap,unwrap,safeName,accountName,write,read,exists,manifest,empty,mbox,prepare,Importer,cleanHTML,documentHTML};
+g.ArchiveCore={VERSION,LIMIT,MANIFEST,PREVIOUS,esc,fold,hash,json,wrap,unwrap,safeName,accountName,write,read,exists,manifest,empty,mbox,prepare,Importer,cleanHTML,documentHTML};
 })(globalThis);
 
