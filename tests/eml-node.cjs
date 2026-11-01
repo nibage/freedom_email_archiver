@@ -23,7 +23,7 @@ async function run(){
  });
  check('Messages without MBOXrd escaping stay byte identical',()=>{
   const input=encode('From: a@example.invalid\r\n\r\nBody\r\n');
-  assert.equal(E.fromMbox(input).bytes,input);
+  assert.equal(decode(E.fromMbox(input).bytes),decode(input));
  });
  check('DKIM header alone does not retain EML',()=>assert.deepEqual(Array.from(E.classify({headers:[{key:'dkim-signature',value:'v=1'}]},[])),[]));
  check('S/MIME and OpenPGP signed messages retain EML',()=>{
