@@ -1,6 +1,5 @@
 /* Optional selected-category RFC 5322 / EML copies. No network access. */
 (function(g){'use strict';
-const text=new TextDecoder('utf-8');
 const sig=/^application\/(?:x-)?pkcs7-signature\b|^application\/pgp-signature\b/i;
 const smime=/^application\/(?:x-)?pkcs7-mime\b/i;
 const opaqueSigned=/smime-type\s*=\s*"?signed-data\b/i;
