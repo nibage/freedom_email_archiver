@@ -45,7 +45,7 @@ async function runEnglishTests(parent){
  check('Encrypted PGP and S/MIME qualify',E.classify({headers:[{key:'content-type',value:'multipart/encrypted; protocol=application/pgp-encrypted'}]},[]).includes('encrypted')&&E.classify({headers:[{key:'content-type',value:'application/pkcs7-mime; smime-type=enveloped-data'}]},[]).includes('encrypted'));
  check('Gmail Important and Starred labels qualify',E.classify({headers:[]},['Important','\\Starred']).length===2);
  const emlFolder=await parent.getDirectoryHandle('originals-'+crypto.randomUUID(),{create:true});
- const makeMessage=(id,extra,body)=>'From example@example.invalid Wed Jan 15 12:00:00 2025\r\nFrom: Anna <a@example.invalid>\r\nTo: Bob <b@example.invalid>\r\nMessage-ID: <'+id+'@example.invalid>\r\nSubject: Original test\r\nDate: Wed, 15 Jan 2025 12:00:00 +0000\r\nMIME-Version: 1.0\r\n'+extra+'\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n'+body+'\r\n';
+ const makeMessage=(id,extra,body)=>'From example@example.invalid Wed Jan 15 12:00:00 2025\r\nFrom: Anna <a@example.invalid>\r\nTo: Bob <b@example.invalid>\r\nMessage-ID: <'+id+'@example.invalid>\r\nSubject: Original test\r\nDate: Wed, 15 Jan 2025 12:00:00 +0000\r\nMIME-Version: 1.0\r\n'+extra+'Content-Type: text/plain; charset=utf-8\r\n\r\n'+body+'\r\n';
  const selectedSource=makeMessage('important','X-Gmail-Labels: Important\r\nDKIM-Signature: v=1; a=rsa-sha256\r\n','>From the archive\r\nSigned bytes stay quoted in MBOX.');
  const plainSource=makeMessage('ordinary','DKIM-Signature: v=1; a=rsa-sha256\r\n','No original needed.');
  const selectedFile=()=>new File([selectedSource+plainSource],'selected.mbox');
