@@ -1,0 +1,23 @@
+name: Offline archive source checks
+on:
+  push:
+    branches: [main, 'feature/**']
+  pull_request:
+jobs:
+  eml-source-and-public-fixtures:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify EML byte extraction and integrity
+        run: node tests/eml-node.cjs
+      - name: Verify only fictional email data are public
+        run: node scripts/check-public.cjs
+      - name: Verify offline installer is reproducible
+        run: |
+          node scripts/build-bundle.cjs
+          git diff --exit-code -- assets/bundle.js
