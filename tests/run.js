@@ -70,9 +70,9 @@ async function runEnglishTests(parent){
  check('Changed label promotes existing mail to EML without a duplicate',selection.stats.new===0&&selection.stats.duplicates===1&&selection.stats.emlSaved===1);
  selectedIndex=await new C.Importer(emlFolder).open();normal=selectedIndex.records.get('emltest/'+normal.id);
  check('Promoted message is linked in HTML and catalog',!!normal.original&&(await C.read(emlFolder,normal.path)).includes('Download EML source message'));
- const restored=await ArchiveReindex.rebuild(emlFolder,{batchSize:1});
+ const emlRebuilt=await ArchiveReindex.rebuild(emlFolder,{batchSize:1});
  const reconstructed=await new C.Importer(emlFolder).open();
- check('HTML-only reindex preserves EML original records',restored.indexed===2&&!!reconstructed.records.get('emltest/'+normal.id).original);
+ check('HTML-only reindex preserves EML original records',emlRebuilt.indexed===2&&!!reconstructed.records.get('emltest/'+normal.id).original);
 
  const originalPage=await C.read(emlFolder,retained.path);
  const originalTemplate=document.createElement('template');originalTemplate.innerHTML=originalPage;
