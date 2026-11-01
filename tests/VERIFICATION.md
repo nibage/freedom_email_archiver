@@ -11,3 +11,7 @@ Tested using Chrome 155.0.8059.81 on Windows, opening local `file://` pages with
 Machine-readable results are `engine-results.json` and `browser-results.json`. The screenshot shows fictional data only. Open `tests/index.html` in Chrome/Edge and choose a separate test folder to rerun the native integration tests yourself; the installer check is part of the automated test setup, not that manual page.
 
 Edge, Firefox, Safari and Linux were not independently tested for this English package. See the main README for supported APIs and limits. No test result is a guarantee against all malformed mail or abrupt hardware failure.
+
+## Proposed HTML fidelity update (not yet independently browser-verified)
+
+The `fix/email-html-fidelity` branch adds isolated rich-HTML rendering, blocked-by-default remote images with a manual load control, and an optional reformat pass for existing duplicate messages. Additional engine assertions cover color retention, CSS URL stripping, remote-image opt-in, and duplicate reformatting. The prior Chrome test counts above refer to the *earlier published version*, not this change. Rerun `tests/index.html` in Chrome/Edge with an empty test directory before deploying to real mail.

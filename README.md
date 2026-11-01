@@ -24,7 +24,7 @@ Example: selecting an archive root named `MyMail` and entering `personal` create
 3. Check free disk space yourself, then start the import and keep the tab open.
 4. Open `index.html` in the destination folder when finished.
 
-Use the same archive root and account for later overlapping exports. Existing mail is retained. Gmail labels are merged as a union. The same Message-ID with different content remains a separate message. Reimporting the same input does not add messages or attachments.
+Use the same archive root and account for later overlapping exports. Existing mail is retained. Gmail labels are merged as a union. The same Message-ID with different content remains a separate message. Reimporting the same input does not add messages or attachments. Optionally reformat existing messages during that reimport.
 
 Use Stop to commit the current batch. After a crash, reimport the source from the beginning: previously committed messages are recognized. Source files are never modified. Run only one writer per archive, including across cloud-synced computers.
 
@@ -65,14 +65,16 @@ The `.js` extension of catalog files permits loading data through classic script
 - Creating many thousands of separate files through the browser can take hours. Search scans prebuilt text shards, not individual message HTML files; the first query on a large archive can take several seconds.
 - Dates are grouped by UTC year/month. Local display time can differ. Missing/invalid dates use `unknown-date`.
 - MBOX envelope detection validates a date-shaped separator and following headers, supports mboxrd escaping and verified Content-Length boundaries. Unescaped body text that exactly impersonates a full MBOX envelope and header block is inherently ambiguous.
-- Original CSS and active content are removed. This is a readable archive, not a byte-for-byte preservation copy of all transport headers, MIME structure or signatures. Retain your source MBOX separately for full fidelity.
+- The renderer preserves a bounded set of safe inline colors, typography, table formatting and supported CSS rules. It still removes active HTML, untrusted scripts, CSS network URLs and unsupported styles. Some complex newsletters will therefore not match Thunderbird exactly. Retain the source MBOX for full fidelity.
+- External HTTP(S) images are **blocked on opening**. When online, each standalone message with remote images has an explicit **Load external images** button. Clicking it may reveal your IP address or open a tracking pixel; nothing is fetched before that click. Embedded CID images and bounded inline raster data images remain local and offline.
+- To improve messages already imported with the earlier renderer, reselect the original MBOX files and check **Rebuild the appearance of existing messages**. This rewrites their HTML while preserving deduplication, attachment files and Gmail labels. Without the original MBOX, discarded formatting cannot be reconstructed. Keep a backup before an upgrade.
 - Binary attachment contents are not full-text indexed. Encrypted messages are not decrypted. Embedded-message previews are bounded to three levels.
 - Catalog segments are append-only; automatic compaction and deletion are not implemented.
 - The supported import workflow is MBOX. EML, Maildir, PST/OST and MSG are not advertised as supported formats.
 
 ## Development
 
-No build step is required to run the app. The readable application source is `assets/core.js`, `assets/app.js`, `assets/style.css` and `index.html`.
+No build step is required to run the app. The readable application source is `assets/mail-renderer.js`, `assets/core.js`, `assets/app.js`, `assets/style.css` and `index.html`.
 
 After changing application files or `GUIDE.html`, run `node scripts/build-bundle.cjs`. This refreshes `assets/bundle.js`, the self-contained installer payload used when importing into a new empty folder. It includes application files only, never the example or private email catalog.
 
