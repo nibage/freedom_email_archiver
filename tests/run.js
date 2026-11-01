@@ -73,7 +73,21 @@ async function runEnglishTests(parent){
  const restored=await ArchiveReindex.rebuild(emlFolder,{batchSize:1});
  const reconstructed=await new C.Importer(emlFolder).open();
  check('HTML-only reindex preserves EML original records',restored.indexed===2&&!!reconstructed.records.get('emltest/'+normal.id).original);
- const noRetainFolder=await parent.getDirectoryHandle('no-retain-'+crypto.randomUUID(),{create:true});
+
+ const originalPage=await C.read(emlFolder,retained.path);
+ const originalTemplate=document.createElement('template');originalTemplate.innerHTML=originalPage;
+ const embeddedOriginal=JSON.parse(originalTemplate.content.querySelector('#mail-archive-record').textContent).record.original;
+ check('Standalone HTML stores EML SHA-256 in inert metadata',embeddedOriginal.sha256===retained.original.sha256&&originalPage.includes('Download EML source message'));
+ check('Stored EML excludes the MBOX envelope separator',new TextDecoder().decode(rawBytes).startsWith('From: Anna <a@example.invalid>\r\n'));
+ const sigSource='From test@example.invalid Wed Jan 15 12:00:00 2025\nFrom: a@example.invalid\nTo: b@example.invalid\nSubject: Signed synthetic\nMessage-ID: <signed@example.invalid>\nDate: Wed, 15 Jan 2025 12:00:00 +0000\nMIME-Version: 1.0\nContent-Type: multipart/signed; boundary="sig"; protocol="application/pgp-signature"\n\n--sig\nContent-Type: text/plain; charset=utf-8\n\nFictional signed content\n--sig\nContent-Type: application/pgp-signature\nContent-Transfer-Encoding: base64\n\nYWJj\n--sig--\n';
+ const signedFolder=await parent.getDirectoryHandle('signed-'+crypto.randomUUID(),{create:true});
+ const sigReport=await new C.Importer(signedFolder).run([new File([sigSource],'signed.mbox')],'test');
+ check('Signed multipart MIME auto-retains EML during actual import',sigReport.stats.new===1&&sigReport.stats.emlSaved===1);
+ const encryptedSource='From test@example.invalid Wed Jan 15 12:00:00 2025\nFrom: a@example.invalid\nTo: b@example.invalid\nSubject: Encrypted synthetic\nMessage-ID: <encrypted@example.invalid>\nDate: Wed, 15 Jan 2025 12:00:00 +0000\nMIME-Version: 1.0\nContent-Type: application/pkcs7-mime; smime-type=enveloped-data\nContent-Transfer-Encoding: base64\n\nYWJj\n';
+ const encFolder=await parent.getDirectoryHandle('encrypted-'+crypto.randomUUID(),{create:true});
+ const encReport=await new C.Importer(encFolder).run([new File([encryptedSource],'encrypted.mbox')],'test');
+ check('S/MIME encrypted MIME auto-retains EML during actual import',encReport.stats.new===1&&encReport.stats.emlSaved===1);
+  const noRetainFolder=await parent.getDirectoryHandle('no-retain-'+crypto.randomUUID(),{create:true});
  const disabled=await new C.Importer(noRetainFolder,{retainSelectedEml:false}).run([new File([selectedSource],'selected.mbox')],'test');
  check('Explicit EML opt-out stores HTML with no original',disabled.stats.new===1&&disabled.stats.emlSaved===0&&![...(await new C.Importer(noRetainFolder).open()).records.values()][0].original);
  const failFolder=await parent.getDirectoryHandle('verify-fail-'+crypto.randomUUID(),{create:true});
