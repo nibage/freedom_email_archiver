@@ -25,7 +25,7 @@ function cleanHTML(html,cids={}){
   const t=document.createElement('template');t.innerHTML=html;
   css=Array.from(t.content.querySelectorAll('style')).slice(0,24).map(s=>s.textContent||'').join('\n').slice(0,65536);
  }
- const frag=DOMPurify.sanitize(html,{ALLOWED_TAGS:tags,ALLOWED_ATTR:attrs,ALLOW_DATA_ATTR:false,ALLOW_ARIA_ATTR:false,RETURN_DOM_FRAGMENT:true});
+ const frag=DOMPurify.sanitize(html,{ALLOWED_TAGS:tags,ALLOWED_ATTR:attrs,ADD_DATA_URI_TAGS:['img'],ALLOW_DATA_ATTR:false,ALLOW_ARIA_ATTR:false,RETURN_DOM_FRAGMENT:true});
  const wrapper=document.createElement('div');wrapper.className='mail-content';wrapper.append(frag);
  const els=Array.from(wrapper.querySelectorAll('*')).slice(0,10000),original=new WeakMap();
  for(const el of els){original.set(el,safeStyle(el.getAttribute('style')));el.removeAttribute('style');}
@@ -64,6 +64,7 @@ function cleanHTML(html,cids={}){
    let cid;try{cid=decodeURIComponent(src.replace(/^cid:/i,''));}catch{cid='';}
    const local=/^cid:/i.test(src)?cids[cid.replace(/^<|>$/g,'')]:null;
    if(local)el.setAttribute('src',local);
+   else if(src.length<=4*1024*1024&&/^data:image\/(?:png|jpeg|gif|webp|bmp);base64,[a-z0-9+/=]+$/i.test(src))el.setAttribute('src',src);
    else{
     el.removeAttribute('src');
     if(/^https?:\/\//i.test(src))el.setAttribute('data-remote-src',src);
@@ -74,7 +75,7 @@ function cleanHTML(html,cids={}){
  return {html:wrapper.outerHTML,text:wrapper.textContent||''};
 }
 const remoteScript="document.getElementById('loadRemoteImages')?.addEventListener('click',function(){document.querySelectorAll('.mail-content img[data-remote-src]').forEach(function(img){const src=img.getAttribute('data-remote-src');if(src&&/^https?:\\/\\//i.test(src)){img.setAttribute('src',src);img.removeAttribute('data-remote-src');}});this.remove();});";
-const csp="default-src 'none'; img-src 'self' file: https: http:; style-src 'unsafe-inline'; script-src 'sha256-ONdzB2Snb1KGFcLxYAyUoEX6twdM5pCy78sdYqecEqs='; connect-src 'none'; media-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+const csp="default-src 'none'; img-src 'self' file: data: https: http:; style-src 'unsafe-inline'; script-src 'sha256-ONdzB2Snb1KGFcLxYAyUoEX6twdM5pCy78sdYqecEqs='; connect-src 'none'; media-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
 const css='body{font:16px/1.65 system-ui,sans-serif;margin:32px auto;padding:0 24px;max-width:1000px;color:#182c3b;background:#fff}header{border-bottom:2px solid #dbe4e8;padding-bottom:20px}h1{font-size:25px;overflow-wrap:anywhere}dl{display:grid;grid-template-columns:110px 1fr;gap:5px}dt{color:#526675}dd{margin:0;overflow-wrap:anywhere}main{padding:24px 0;overflow-wrap:anywhere}.mail-content{overflow-x:auto}.mail-content img{max-width:100%;height:auto}.mail-content table{max-width:100%}pre{white-space:pre-wrap;overflow-wrap:anywhere}a{color:#006f72}.note{font-size:13px;color:#526675}.external-images{margin:15px 0}.external-images button{font:inherit;padding:8px 13px;border:1px solid #a1b6b8;border-radius:6px;background:#eaf2f1;cursor:pointer}';
 function documentHTML(meta,body,attachments,back){
  const hasRemote=body.includes('data-remote-src=');
