@@ -63,7 +63,8 @@ function fromHtml(html,source,old){
   date:iso,day:iso?.slice(0,10)||'',rawDate:r.rawDate||values.date||'',
   labels:Array.isArray(r.labels)?r.labels:values.labels?values.labels.split(',').map(x=>x.trim()).filter(Boolean):[],
   attachments,bytes:Number(r.bytes)||0,
-  mime:r.mime&&typeof r.mime==='object'?r.mime:{note:'Original MIME data was not embedded by the earlier importer'}
+  mime:r.mime&&typeof r.mime==='object'?r.mime:{note:'Original MIME data was not embedded by the earlier importer'},
+  ...(g.ArchiveEML.safeOriginal(r.original,source.id)?{original:r.original}:{})
  };
  return {record,text:C.fold(text)};
 }
@@ -83,7 +84,7 @@ async function legacyRecords(root){
 async function rebuild(root,{signal,onProgress=()=>{},batchSize=100}={}){
  const lock=new C.Importer(root);
  await lock.lock();
- const stats={scanned:0,indexed:0,duplicates:0,errors:0,brokenAttachments:0,segments:0,committed:false};
+ const stats={scanned:0,indexed:0,duplicates:0,errors:0,brokenAttachments:0,missingOriginals:0,segments:0,committed:false};
  const notify=()=>onProgress({...stats});
  try{
   let previous;
@@ -115,6 +116,7 @@ async function rebuild(root,{signal,onProgress=()=>{},batchSize=100}={}){
      try{if(!await C.exists(root,source.folder+'/'+decodeURIComponent(a.href)))stats.brokenAttachments++;}
      catch{stats.brokenAttachments++;}
     }
+    if(record.original&&!await C.exists(root,source.folder+'/'+record.original.href))stats.missingOriginals++;
     batch.push(record);search.push({key,text});accounts.add(source.account);stats.indexed++;
     if(batch.length>=batchSize)await flush();
    }catch{stats.errors++;}
@@ -124,7 +126,7 @@ async function rebuild(root,{signal,onProgress=()=>{},batchSize=100}={}){
   await flush();
   const next={kind:'manifest',format:C.VERSION,generation:(previous.generation||0)+1,
    created:previous.created||new Date().toISOString(),updated:new Date().toISOString(),
-   accounts:[...accounts].sort(),segments,total:stats.indexed,rebuild:{scanned:stats.scanned,errors:stats.errors,brokenAttachments:stats.brokenAttachments}};
+   accounts:[...accounts].sort(),segments,total:stats.indexed,rebuild:{scanned:stats.scanned,errors:stats.errors,brokenAttachments:stats.brokenAttachments,missingOriginals:stats.missingOriginals}};
   // Do not touch HTML or attachment files; publish last, after all shards exist.
   await C.write(root,C.PREVIOUS,C.wrap(previous));
   await C.write(root,C.MANIFEST,C.wrap(next));
