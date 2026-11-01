@@ -15,3 +15,7 @@ Edge, Firefox, Safari and Linux were not independently tested for this English p
 ## Proposed HTML fidelity update (not yet independently browser-verified)
 
 The `fix/email-html-fidelity` branch adds isolated rich-HTML rendering, blocked-by-default remote images with a manual load control, and an optional reformat pass for existing duplicate messages. Additional engine assertions cover color retention, CSS URL stripping, remote-image opt-in, and duplicate reformatting. The prior Chrome test counts above refer to the *earlier published version*, not this change. Rerun `tests/index.html` in Chrome/Edge with an empty test directory before deploying to real mail.
+
+## Rebuildable HTML metadata branch (pending integration verification)
+
+The additional branch adds inert per-email JSON metadata, a separate HTML-folder index rebuild, and generated manifest placement under `assets/catalog/` with fallback to legacy root manifests. Added browser tests exercise index rebuilding, metadata recovery, cancellation and preservation of standalone HTML/attachment paths. These tests have been authored but **not independently executed** in a real Chrome/Edge filesystem session. The older verification counts in this file must not be attributed to the new feature.
