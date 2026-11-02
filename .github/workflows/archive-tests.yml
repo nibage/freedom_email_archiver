@@ -17,6 +17,8 @@ jobs:
         run: node tests/eml-node.cjs
       - name: Verify standalone reader image consent and navigation
         run: node tests/reader-node.cjs
+      - name: Verify archived HTML reader upgrade is scoped and cancellable
+        run: node tests/reader-upgrade-node.cjs
       - name: Verify recent-folder picker and repair target isolation
         run: node tests/recent-target-node.cjs
       - name: Verify only fictional email data are public
