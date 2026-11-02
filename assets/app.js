@@ -184,7 +184,11 @@ async function install(dir){
  if(!await C.exists(dir,paths.current)&&!await C.exists(dir,'archive.js')&&!await C.exists(dir,'assets/catalog/archive.js'))await C.write(dir,paths.current,C.wrap(C.empty()));
 }
 function progress(s){$('progress').value=s.totalBytes?Math.min(100,100*s.bytes/s.totalBytes):0;for(const [id,k] of [['readCount','read'],['newCount','new'],['dupeCount','duplicates'],['refreshedCount','refreshed'],['emlSavedCount','emlSaved'],['emlReusedCount','emlReused'],['errorCount','errors']])$(id).textContent=s[k].toLocaleString('en-GB');$('progressDetail').textContent=(s.bytes/1024**2).toFixed(1)+' / '+(s.totalBytes/1024**2).toFixed(1)+' MiB read · '+s.committed+' changes committed to the catalog';}
-$('start').onclick=async()=>{if(busy)return;let acc;try{acc=C.accountName($('importAccount').value.trim());}catch(e){showError(e);return;}busy=true;controller=new AbortController();$('progressPanel').hidden=false;$('stop').hidden=false;$('chooseDir').disabled=true;$('reuseImportDir').disabled=true;$('files').disabled=true;$('importAccount').disabled=true;$('refreshExisting').disabled=true;$('retainSignedEml').disabled=true;$('retainStarredEml').disabled=true;$('retainImportantEml').disabled=true;ready();notice('');$('status').textContent='Importing. Keep this tab open…';try{await install(root);const imp=new C.Importer(root,{signal:controller.signal,onProgress:progress,emlPolicy:{signed:$('retainSignedEml').checked,encrypted:$('retainSignedEml').checked,starred:$('retainStarredEml').checked,important:$('retainImportantEml').checked},refreshExisting:$('refreshExisting').checked});const report=await imp.run(Array.from($('files').files),acc);
+$('start').onclick=async()=>{if(busy||repairBusy)return;let acc;try{acc=C.accountName($('importAccount').value.trim());}catch(e){showError(e);return;}
+ // Request access from the user's Start click (never silently at startup).
+ try{await allowRoot(root);}catch(e){showError(e);return;}
+ void rememberAccount(acc);
+ busy=true;controller=new AbortController();$('progressPanel').hidden=false;$('stop').hidden=false;$('chooseDir').disabled=true;$('previewReindex').disabled=true;$('files').disabled=true;$('importAccount').disabled=true;$('refreshExisting').disabled=true;$('retainSignedEml').disabled=true;$('retainStarredEml').disabled=true;$('retainImportantEml').disabled=true;ready();notice('');$('status').textContent='Importing. Keep this tab open…';try{await install(root);const imp=new C.Importer(root,{signal:controller.signal,onProgress:progress,emlPolicy:{signed:$('retainSignedEml').checked,encrypted:$('retainSignedEml').checked,starred:$('retainStarredEml').checked,important:$('retainImportantEml').checked},refreshExisting:$('refreshExisting').checked});const report=await imp.run(Array.from($('files').files),acc);
 const viewerPath=(await C.catalogPaths(root)).viewerDir+'index.html';
 $('status').textContent=report.interrupted?'Import stopped safely. Earlier committed messages remain saved. Open '+viewerPath+' to test them.':'Import complete. Open '+viewerPath+' in the selected archive root.';
 if(report.issues.length)notice('Some messages could not be imported. Source offsets and error codes are in '+acc+'/catalog/import-….json. Source files were not modified.');
@@ -200,46 +204,50 @@ if(!report.issues.length)notice('Import saved to '+root.name+'. Open its own '+v
   showError(e);
  }
  try{await readCatalog();}catch{}
-}finally{busy=false;$('stop').hidden=true;$('chooseDir').disabled=false;updateRecentButtons();$('files').disabled=false;$('importAccount').disabled=false;$('refreshExisting').disabled=false;$('retainSignedEml').disabled=false;$('retainStarredEml').disabled=false;$('retainImportantEml').disabled=false;ready();}};
+}finally{busy=false;$('stop').hidden=true;$('chooseDir').disabled=false;$('previewReindex').disabled=!root;$('files').disabled=false;$('importAccount').disabled=false;$('refreshExisting').disabled=false;$('retainSignedEml').disabled=false;$('retainStarredEml').disabled=false;$('retainImportantEml').disabled=false;ready();}};
 $('stop').onclick=()=>{controller?.abort();$('status').textContent='Finishing the current message and committing the catalog…';};
-function showError(e){const msgs={APP_SUBFOLDER:'Choose the parent archive root, not its __email_archiver application subfolder.',RECENT_ACCESS:'The last selected archive is no longer accessible. Choose the archive root folder again.',LOCKED:'Another import or catalog repair may already be writing to this folder. Close other archive tabs and retry.',ACCOUNT:'Enter a valid account folder name, such as personal.',BROWSER:'Import requires a current desktop Chrome or Edge with the File System Access API.',CATALOG:'The catalog could not be loaded. Check the folder is complete and retry importing from your backup.',FORMAT:'Unsupported or damaged catalog format.',NONARCHIVE:'The selected folder contains another index.html. Choose an empty folder or an archive created by this tool.',OLD_ARCHIVE_FORMAT:'This is an older archive layout. For testing, choose a new empty archive root and reimport the original MBOX. No automatic migration is performed.'};notice(msgs[e.message]||('Operation failed ('+e.name+'). Check permissions, free space and whether another tab is writing to the archive.'));}
+function showError(e){const msgs={APP_SUBFOLDER:'Choose the parent archive root, not its __email_archiver application subfolder.',RECENT_ACCESS:'Archive folder access is not available. Click Import folder root to select it again, then retry.',LOCKED:'Another import or catalog repair may already be writing to this folder. Close other archive tabs and retry.',ACCOUNT:'Enter a valid account folder name, such as personal.',BROWSER:'Import requires a current desktop Chrome or Edge with the File System Access API.',CATALOG:'The catalog could not be loaded. Check the folder is complete and retry importing from your backup.',FORMAT:'Unsupported or damaged catalog format.',NONARCHIVE:'The selected folder contains another index.html. Choose an empty folder or an archive created by this tool.',OLD_ARCHIVE_FORMAT:'This is an older archive layout. For testing, choose a new empty archive root and reimport the original MBOX. No automatic migration is performed.'};notice(msgs[e.message]||('Operation failed ('+e.name+'). Check permissions, free space and whether another tab is writing to the archive.'));}
 
-let repairRoot=null,repairBusy=false,repairController=null,repairPreview=0;
-$('chooseReindexDir').onclick=async()=>{
- try{await selectRepairRoot(await pickRoot('mailarchive-rebuild'));}
- catch(e){if(e.name!=='AbortError')showError(e);}
-};
+let repairBusy=false,repairController=null,repairPreview=0;
 $('previewReindex').onclick=async()=>{
- if(!repairRoot||repairBusy)return;
+ if(!root||repairBusy||busy)return;
+ const target=root;
+ // Permission is requested only from this explicit button action, not on page load.
+ try{await allowRoot(target);}catch(e){showError(e);return;}
  repairBusy=true;$('previewReindex').disabled=true;$('startReindex').disabled=true;
- $('chooseReindexDir').disabled=true;$('reuseReindexDir').disabled=true;$('reindexStatus').textContent='Scanning folders (read only)…';
+ $('chooseDir').disabled=true;ready();$('reindexStatus').textContent='Scanning '+rootPathLabel(target)+' (read only)…';
  try{
   repairPreview=0;
-  for await(const entry of ArchiveReindex.scan(repairRoot)){
+  for await(const entry of ArchiveReindex.scan(target)){
    repairPreview++;
    if(repairPreview%200===0){$('reindexStatus').textContent=repairPreview+' message pages found…';await new Promise(resolve=>setTimeout(resolve,0));}
   }
-  $('reindexStatus').textContent=repairPreview+' HTML message files found. This operation will regenerate the catalog, not the emails. Make sure your backup is complete.';
+  $('reindexStatus').textContent=repairPreview+' HTML message files found in '+rootPathLabel(target)+'. Rebuilding changes only its catalog, not its email HTML or attachments.';
   $('startReindex').disabled=repairPreview===0;
- }catch(e){showError(e);}finally{repairBusy=false;$('previewReindex').disabled=false;$('chooseReindexDir').disabled=false;updateRecentButtons();}
+  void updateRootInfo(target);
+ }catch(e){showError(e);}
+ finally{repairBusy=false;$('previewReindex').disabled=false;$('chooseDir').disabled=false;ready();}
 };
 $('startReindex').onclick=async()=>{
- if(repairBusy||!repairRoot||!repairPreview||busy)return;
+ if(repairBusy||!root||!repairPreview||busy)return;
+ const target=root;
+ try{await allowRoot(target);}catch(e){showError(e);return;}
  repairBusy=true;repairController=new AbortController();$('startReindex').disabled=true;
- $('chooseReindexDir').disabled=true;$('reuseReindexDir').disabled=true;$('previewReindex').disabled=true;
- $('stopReindex').hidden=false;$('reindexStatus').textContent='Rebuilding search indexes. Leave this tab open…';
+ $('chooseDir').disabled=true;$('previewReindex').disabled=true;
+ $('stopReindex').hidden=false;$('reindexStatus').textContent='Rebuilding catalog in '+rootPathLabel(target)+'. Leave this tab open…';
+ ready();
  try{
-  const stats=await ArchiveReindex.rebuild(repairRoot,{signal:repairController.signal,onProgress:s=>{
+  const stats=await ArchiveReindex.rebuild(target,{signal:repairController.signal,onProgress:s=>{
    $('reindexStatus').textContent=s.scanned+' HTML pages scanned · '+s.indexed+' indexed · '+s.errors+' errors · '+s.brokenAttachments+' missing attachments'+(s.committed?' · new catalog published':'');
   }});
-  $('reindexStatus').textContent=stats.interrupted?'Stopped. The previous catalog is still active.':('Finished. '+stats.indexed+' messages indexed, '+stats.errors+' errors, '+stats.brokenAttachments+' broken attachments. Reopen index.html in the archive root.');
+  $('reindexStatus').textContent=stats.interrupted?'Stopped. The previous catalog is still active.':('Finished rebuilding '+rootPathLabel(target)+': '+stats.indexed+' messages indexed, '+stats.errors+' errors.');
   if(!stats.interrupted){
-   // The current viewer can reload its own catalog if it was the repaired archive.
+   // Browse remains attached to the viewer's own index.html.
    try{await readCatalog();}catch{}
-   notice('Rebuilt the catalog only in '+repairRoot.name+'. Open that archive’s own index.html to browse it.');
+   notice('Rebuilt only the catalog in '+rootPathLabel(target)+'. Open that archive’s own index.html to browse it.');
   }
  }catch(e){showError(e);$('reindexStatus').textContent='Rebuild failed. The previous catalog should still be available; check your archive backup.';}
- finally{repairBusy=false;$('chooseReindexDir').disabled=false;updateRecentButtons();$('previewReindex').disabled=false;$('startReindex').disabled=repairPreview===0;$('stopReindex').hidden=true;}
+ finally{repairBusy=false;$('chooseDir').disabled=false;$('previewReindex').disabled=false;$('startReindex').disabled=repairPreview===0;$('stopReindex').hidden=true;ready();}
 };
 $('stopReindex').onclick=()=>repairController?.abort();
 window.addEventListener('beforeunload',e=>{if(busy||repairBusy){e.preventDefault();e.returnValue='';}});
