@@ -20,6 +20,11 @@ assert(page.replaceAll('&#39;',"'").includes("script-src 'sha256-"+sha+"'"),'CSP
 assert(!page.includes("script-src 'unsafe-inline'"));
 const sourceIndex=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const app=fs.readFileSync(path.join(root,'assets/app.js'),'utf8');
+const styles=fs.readFileSync(path.join(root,'assets/style.css'),'utf8');
+assert(sourceIndex.indexOf('id="notice"')<sourceIndex.indexOf('id="import"'),'Notices must appear above import panels.');
+assert(sourceIndex.indexOf('id="progressPanel"')<sourceIndex.indexOf('class="importgrid"'),'Import progress must appear above the importer.');
+assert(styles.includes('grid-template-columns:repeat(4,minmax(0,1fr))')&&styles.includes('.filters .search{grid-column:span 2}'),'Search must retain half the filter row while dates match.');
+assert(sourceIndex.includes('id="previewReaders"')&&sourceIndex.includes('id="upgradeReaders"'),'Legacy reader repair must be available in the import workspace.');
 assert(sourceIndex.includes('id="autoImages" checked'));
 assert(app.includes("images='+($('autoImages').checked?'auto':'manual')"));
 assert(app.includes('saveReturnPosition()')&&app.includes('restoreReturnPosition()'));
