@@ -6,7 +6,7 @@ const src=fs.readFileSync(path.join(__dirname,'../assets/app.js'),'utf8');
 function node(tag,id){
  return {tagName:tag,id,children:[],value:id==='pageSize'?'50':'',files:[],disabled:false,hidden:false,checked:id==='autoImages',
   textContent:'',style:{},classList:{toggle(){}},replaceChildren(...items){this.children=items;},
-  addEventListener(){},remove(){},append(...items){this.children.push(...items);},
+  addEventListener(){},remove(){},add(item){this.children.push(item);},append(...items){this.children.push(...items);},
   setAttribute(){},getAttribute(){return null;}};
 }
 const elements=new Map();
