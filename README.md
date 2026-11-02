@@ -34,11 +34,15 @@ The Browse archive toolbar has **Load external images automatically** checked by
 
 The preference uses optional tab-scoped browser session storage, not the mail catalog or private cloud. The viewer remembers the current search filters, page and scroll location when opening a message; the Back link in newly generated message pages uses the browser's previous history entry, and the viewer also offers a session-scoped scroll restoration fallback when an older message opens the catalog through its ordinary link. Browser storage/privacy settings may prevent the fallback; Chrome's Back button remains an alternative. Older already-saved HTML pages do not yet contain the updated image auto-load and history-aware script; restoring those per-message controls requires regenerating their HTML from the MBOX or a separate HTML-only upgrade.
 
-## Faster archive root selection
+## Unified import and catalog repair
 
-In **Import MBOX** and **Repair catalog**, the **Use recent archive** shortcut can reuse the last directory you explicitly picked, subject to browser read/write permission. **Choosing a target folder never changes the Browse tab:** it always reads the catalog and opens HTML messages belonging to the `index.html` currently opened in the browser. To browse another archive, open its own `index.html`. The browser's normal folder picker also remembers recent directories. The shortcut stores **only a directory handle** in optional local IndexedDB, never message contents, search data, or MBOX files. If browser storage is blocked, it is available only for the current open tab, or you can choose a directory again. This convenience does not affect the portability of any archive or its offline reading.
+Click the **green Import button in the upper-right navigation** to switch to the import workspace in the **same `index.html`**. The importer and **Repair catalog** are visually separate panels on one page and use one **Import folder root** selection. Click **Browse archive** to return to the list; selecting a target never changes the opened viewer.
 
-Import and catalog repair always use the **separately selected target root**. Rebuilding the catalog for Archive B from a viewer opened in Archive A modifies Archive B, not A. The interface identifies the repair target; when finished, open B's own viewer. Browsers do not grant access to a local page's parent folder automatically.
+The last explicitly chosen archive folder is preselected automatically on a later visit if the browser allows local IndexedDB storage; the last valid **Account folder inside the archive** is also prefilled. There is no longer a *Use recent archive* button. Clicking **Import folder root** lets you choose another folder; changing it invalidates an earlier catalog-repair preview. The remembered directory handle does not grant write permission automatically: Chrome may prompt when you explicitly **Start import** or **Preview folder scan**.
+
+The app displays the selected root as a **folder-relative path** (`emails/`) and, once permitted, its viewer path and indexed message count. The File System Access API **does not disclose the absolute local filesystem path** for an arbitrary chosen directory, so the UI does not invent one. Only the folder handle and account name are stored as optional browser preferences; email contents remain in your archive. Browsing remains portable without any browser profile.
+
+Rebuild changes only the catalog inside the currently selected root; it does not move or rewrite HTML messages or attachments. Open that root's own viewer to browse it. Back up the whole archive before any rebuild.
 
 ## Reading, backup and cloud storage
 
