@@ -34,6 +34,12 @@ The Browse archive toolbar has **Load external images automatically** checked by
 
 The preference uses optional tab-scoped browser session storage, not the mail catalog or private cloud. The viewer remembers the current search filters, page and scroll location when opening a message; the Back link in newly generated message pages uses the browser's previous history entry, and the viewer also offers a session-scoped scroll restoration fallback when an older message opens the catalog through its ordinary link. Browser storage/privacy settings may prevent the fallback; Chrome's Back button remains an alternative. Older already-saved HTML pages do not yet contain the updated image auto-load and history-aware script; restoring those per-message controls requires regenerating their HTML from the MBOX or a separate HTML-only upgrade.
 
+## Faster archive root selection
+
+In **Import MBOX** and **Repair catalog**, the **Use recent archive** shortcut can reuse the last directory you explicitly picked, subject to browser read/write permission. The browser's normal folder picker also remembers recent directories. The shortcut stores **only a directory handle** in optional local IndexedDB, never message contents, search data, or MBOX files. If browser storage is blocked, it is available only for the current open tab, or you can choose a directory again. This convenience does not affect the portability of any archive or its offline reading.
+
+Import and catalog repair always use the **separately selected target root**. Rebuilding the catalog for Archive B from a viewer opened in Archive A modifies Archive B, not A. The interface identifies the repair target; when finished, open B's own viewer. Browsers do not grant access to a local page's parent folder automatically.
+
 ## Reading, backup and cloud storage
 
 Copy the **whole archive root**, including `__email_archiver`, both manifests and all account folders (or `index.html` and `assets` for a legacy archive). On another computer, make the files available locally and open `index.html`. A cloud provider's web preview is not a supported runtime. For offline use, mark the complete folder as available offline and wait for synchronization to finish.
