@@ -30,10 +30,12 @@ async function runEnglishTests(parent){
  const snapshot=(await C.manifest(root)).generation;
  const interrupted=await ArchiveReindex.rebuild(root,{signal:stopRebuild.signal});
  check('Cancelled rebuild never publishes a new manifest',interrupted.interrupted&&(await C.manifest(root)).generation===snapshot);
- const legacy=ArchiveReindex.fromHtml(stored.replace(/<script id="mail-archive-record" type="application\/json">[\s\S]*?<\/script>/,''),
- {account:rich.account,id:rich.id,path:rich.path,folder:rich.folder},rich);
- check('Legacy HTML is indexable using prior metadata',legacy.record.id===rich.id&&legacy.record.subject===rich.subject);
- const beforeRefresh=await contentPaths(root);r=await new C.Importer(root,{refreshExisting:true}).run([first()],'example');check('Reformat duplicates without creating new mail or attachments',r.stats.refreshed===4&&r.stats.new===0&&JSON.stringify(beforeRefresh)===JSON.stringify(await contentPaths(root)));
+ let rejectedMissingMetadata=false;
+ try{ArchiveReindex.fromHtml(stored.replace(/<script id="mail-archive-record" type="application\/json">[\s\S]*?<\/script>/,''),{account:rich.account,id:rich.id,path:rich.path,folder:rich.folder});}
+ catch(e){rejectedMissingMetadata=e.message==='MISSING_EMBEDDED_METADATA';}
+ check('Catalog rebuild rejects HTML without self-describing metadata',rejectedMissingMetadata);
+ const unchanged=await contentPaths(root);r=await new C.Importer(root).run([first()],'example');
+ check('Repeated MBOX import does not duplicate archived email files',r.stats.new===0&&JSON.stringify(unchanged)===JSON.stringify(await contentPaths(root)));
 
  // EML fidelity and policy tests use fictional messages and temporary folders.
  const E=ArchiveEML,enc=new TextEncoder();
@@ -46,10 +48,24 @@ async function runEnglishTests(parent){
  check('Gmail Important and Starred labels qualify',E.classify({headers:[]},['Important','\\Starred']).length===2);
  const emlFolder=await parent.getDirectoryHandle('originals-'+crypto.randomUUID(),{create:true});
  const makeMessage=(id,extra,body)=>'From example@example.invalid Wed Jan 15 12:00:00 2025\r\nFrom: Anna <a@example.invalid>\r\nTo: Bob <b@example.invalid>\r\nMessage-ID: <'+id+'@example.invalid>\r\nSubject: Original test\r\nDate: Wed, 15 Jan 2025 12:00:00 +0000\r\nMIME-Version: 1.0\r\n'+extra+'Content-Type: text/plain; charset=utf-8\r\n\r\n'+body+'\r\n';
+ const policyMessages=makeMessage('starred-policy','X-Gmail-Labels: Starred\r\n','Starred fixture')
+                      +makeMessage('important-policy','X-Gmail-Labels: Important\r\n','Important fixture');
+ const starredRoot=await parent.getDirectoryHandle('starred-only-'+crypto.randomUUID(),{create:true});
+ const starredRun=await new C.Importer(starredRoot,{emlPolicy:{starred:true,important:false}}).run([new File([policyMessages],'labels.mbox')],'policy');
+ const starredRecords=[...(await new C.Importer(starredRoot).open()).records.values()];
+ check('Starred-only EML option retains Starred but excludes Important',starredRun.stats.emlSaved===1&&!!starredRecords.find(x=>x.messageId.includes('starred-policy@')).original&&!starredRecords.find(x=>x.messageId.includes('important-policy@')).original);
+ const importantRoot=await parent.getDirectoryHandle('important-only-'+crypto.randomUUID(),{create:true});
+ const importantRun=await new C.Importer(importantRoot,{emlPolicy:{starred:false,important:true}}).run([new File([policyMessages],'labels.mbox')],'policy');
+ const importantRecords=[...(await new C.Importer(importantRoot).open()).records.values()];
+ check('Important-only EML option retains Important but excludes Starred',importantRun.stats.emlSaved===1&&!!importantRecords.find(x=>x.messageId.includes('important-policy@')).original&&!importantRecords.find(x=>x.messageId.includes('starred-policy@')).original);
+ const defaultRoot=await parent.getDirectoryHandle('default-labels-'+crypto.randomUUID(),{create:true});
+ const defaultRun=await new C.Importer(defaultRoot).run([new File([policyMessages],'labels.mbox')],'policy');
+ check('Starred and Important EML copies are OFF by default',defaultRun.stats.new===2&&defaultRun.stats.emlSaved===0);
  const selectedSource=makeMessage('important','X-Gmail-Labels: Important\r\nDKIM-Signature: v=1; a=rsa-sha256\r\n','>From the archive\r\nSigned bytes stay quoted in MBOX.');
  const plainSource=makeMessage('ordinary','DKIM-Signature: v=1; a=rsa-sha256\r\n','No original needed.');
  const selectedFile=()=>new File([selectedSource+plainSource],'selected.mbox');
- let selection=await new C.Importer(emlFolder,{batchSize:1}).run([selectedFile()],'emltest');
+ const importantPolicy={important:true};
+ let selection=await new C.Importer(emlFolder,{batchSize:1,emlPolicy:importantPolicy}).run([selectedFile()],'emltest');
  check('Selected-category import writes only qualifying EML',selection.stats.new===2&&selection.stats.emlSaved===1&&selection.stats.errors===0);
  let selectedIndex=await new C.Importer(emlFolder).open(),messages=[...selectedIndex.records.values()];
  let retained=messages.find(x=>x.messageId.includes('important@')),normal=messages.find(x=>x.messageId.includes('ordinary@'));
@@ -59,14 +75,14 @@ async function runEnglishTests(parent){
  const rawBytes=new Uint8Array(await (await C.fileHandle(emlFolder,retained.folder+'/'+retained.original.href)).getFile().then(f=>f.arrayBuffer()));
  check('EML keeps CRLF headers and restores escaped From line',new TextDecoder().decode(rawBytes).includes('\r\n\r\nFrom the archive\r\n'));
  const oldPaths=await contentPaths(emlFolder);
- selection=await new C.Importer(emlFolder).run([selectedFile()],'emltest');
+ selection=await new C.Importer(emlFolder,{emlPolicy:importantPolicy}).run([selectedFile()],'emltest');
  check('Repeated import reuses EML without creating more files',selection.stats.new===0&&selection.stats.duplicates===2&&selection.stats.emlSaved===0&&selection.stats.emlReused===1&&JSON.stringify(oldPaths)===JSON.stringify(await contentPaths(emlFolder)));
  await C.write(emlFolder,retained.folder+'/'+retained.original.href,enc.encode('corrupted'));
  check('Tampering with EML is detected',!await E.verify(emlFolder,retained,retained.original));
- selection=await new C.Importer(emlFolder).run([selectedFile()],'emltest');
+ selection=await new C.Importer(emlFolder,{emlPolicy:importantPolicy}).run([selectedFile()],'emltest');
  check('A later import repairs corrupt EML and verifies it',selection.stats.emlSaved===1&&await E.verify(emlFolder,retained,retained.original));
  const importantAdded=plainSource.replace('DKIM-Signature:','X-Gmail-Labels: Important\r\nDKIM-Signature:');
- selection=await new C.Importer(emlFolder).run([new File([importantAdded],'label-update')],'emltest');
+ selection=await new C.Importer(emlFolder,{emlPolicy:importantPolicy}).run([new File([importantAdded],'label-update')],'emltest');
  check('Changed label promotes existing mail to EML without a duplicate',selection.stats.new===0&&selection.stats.duplicates===1&&selection.stats.emlSaved===1);
  selectedIndex=await new C.Importer(emlFolder).open();normal=selectedIndex.records.get('emltest/'+normal.id);
  check('Promoted message is linked in HTML and catalog',!!normal.original&&(await C.read(emlFolder,normal.path)).includes('Download EML source message'));
@@ -88,7 +104,7 @@ async function runEnglishTests(parent){
  const encReport=await new C.Importer(encFolder).run([new File([encryptedSource],'encrypted.mbox')],'test');
  check('S/MIME encrypted MIME auto-retains EML during actual import',encReport.stats.new===1&&encReport.stats.emlSaved===1);
   const noRetainFolder=await parent.getDirectoryHandle('no-retain-'+crypto.randomUUID(),{create:true});
- const disabled=await new C.Importer(noRetainFolder,{retainSelectedEml:false}).run([new File([selectedSource],'selected.mbox')],'test');
+ const disabled=await new C.Importer(noRetainFolder,{emlPolicy:{signed:false,encrypted:false,starred:false,important:false}}).run([new File([selectedSource],'selected.mbox')],'test');
  check('Explicit EML opt-out stores HTML with no original',disabled.stats.new===1&&disabled.stats.emlSaved===0&&![...(await new C.Importer(noRetainFolder).open()).records.values()][0].original);
  const failFolder=await parent.getDirectoryHandle('verify-fail-'+crypto.randomUUID(),{create:true});
  const realWrite=C.write;let didFail=false;
