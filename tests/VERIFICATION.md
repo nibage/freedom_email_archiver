@@ -19,3 +19,19 @@ The `fix/email-html-fidelity` branch adds isolated rich-HTML rendering, blocked-
 ## Rebuildable HTML metadata branch (pending integration verification)
 
 The additional branch adds inert per-email JSON metadata, a separate HTML-folder index rebuild, and generated manifest placement under `assets/catalog/` with fallback to legacy root manifests. Added browser tests exercise index rebuilding, metadata recovery, cancellation and preservation of standalone HTML/attachment paths. These tests have been authored but **not independently executed** in a real Chrome/Edge filesystem session. The older verification counts in this file must not be attributed to the new feature.
+
+## Selected EML preservation branch — verification status
+
+The `feature/selected-eml-retention` branch adds a default-on selected-category EML policy. Added native-browser regression checks exercise MBOXrd body-only de-quoting, CRLF preservation, DKIM-only exclusion, Gmail Important/Starred, PGP and S/MIME signed/encrypted classification, selected EML file output, SHA-256 verification, repeat-import reuse, corruption recovery, label-based promotion, intentional opt-out, EML verification failure without publishing false metadata, and preservation of EML references during HTML-only catalog rebuild.
+
+The standalone source-level tests are available at `tests/eml-node.cjs` and can be run using `node tests/eml-node.cjs` without external libraries.
+
+The EML helper's classification, byte-extraction and overwrite/reuse logic were also **executed in a limited JavaScript in-memory filesystem adapter**. That test used a simple test hash (not SHA-256), so it verifies control flow and round-trip reuse but does not replace native browser integration. Syntax checks and bundle consistency checks were performed. **The full native File System Access browser suite and real multi-GB private MBOX were not run here.** Do not attribute earlier test counts to the new branch. Run `tests/index.html` on a disposable Chrome/Edge folder and check that copied EML bytes pass SHA-256 verification before using a real archive.
+
+## Current branch option defaults and migration removal
+
+The three EML options are independent: signed/encrypted **on by default**, Gmail Starred **off by default**, Gmail Important **off by default**. Each Gmail checkbox explicitly warns that storing EML uses more space, and Important may include a large number of auto-labeled emails. Browser regression tests cover Starred-only, Important-only, and both-off imports. Node tests also cover the independent selector logic.
+
+The obsolete one-time **Rebuild appearance** checkbox, legacy root manifest fallback and old-HTML recovery logic have been removed. This experimental branch requires fresh MBOX imports into a new archive or an existing archive using the current `assets/catalog/` format. The catalog repair operation only accepts valid embedded metadata and must not publish an incomplete index.
+
+These updated tests are authored but the full native File System Access browser suite has not yet been independently executed; do not interpret prior baseline counts as passing results for this branch.

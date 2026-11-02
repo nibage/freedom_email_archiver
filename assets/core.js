@@ -20,11 +20,16 @@ const empty=()=>({kind:'manifest',format:VERSION,generation:0,accounts:[],segmen
 function checkManifest(m){if(m.kind!=='manifest'||m.format!==VERSION||!Array.isArray(m.segments)||!Array.isArray(m.accounts))throw Error('FORMAT');return m;}
 const MANIFEST='assets/catalog/archive.js',PREVIOUS='assets/catalog/archive.previous.js';
 async function manifest(root){
- for(const [current,backup] of [[MANIFEST,PREVIOUS],['archive.js','archive.previous.js']]){
-  if(!await exists(root,current)&&!await exists(root,backup))continue;
-  try{return checkManifest(unwrap(await read(root,current)));}
-  catch{try{return checkManifest(unwrap(await read(root,backup)));}catch{throw Error('CATALOG');}}
+ if(await exists(root,MANIFEST)){
+  try{return checkManifest(unwrap(await read(root,MANIFEST)));}catch{
+   try{return checkManifest(unwrap(await read(root,PREVIOUS)));}catch{throw Error('CATALOG');}
+  }
  }
+ if(await exists(root,PREVIOUS)){
+  try{return checkManifest(unwrap(await read(root,PREVIOUS)));}catch{throw Error('CATALOG');}
+ }
+ // Never treat old root-manifest archives as an empty archive.
+ if(await exists(root,'archive.js')||await exists(root,'archive.previous.js'))throw Error('OLD_ARCHIVE_FORMAT');
  return empty();
 }
 // Read bounded chunks. A large/invalid line cannot grow the scanner's memory indefinitely.
@@ -59,7 +64,8 @@ function labels(m){const out=[];for(const h of m.headers.filter(h=>h.key==='x-gm
 const {cleanHTML,documentHTML}=g.MailRenderer;
 function extensionSafe(name,type){return /\.(?:html?|xhtml|svg|xml|mhtml?|js|mjs|cjs|hta|exe|com|scr|bat|cmd|ps1|vbs|vbe|wsf|url|lnk|desktop|sh|reg|msi)$/i.test(name)||/^(text\/html|image\/svg\+xml|application\/(?:xhtml\+xml|javascript|xml))$/i.test(type);}
 async function prepare(bytes,account,depth=0){
- const m=await PostalMime.parse(unescapeMbox(bytes),{forceRfc822Attachments:true,maxNestingDepth:64,maxHeadersSize:2*1024*1024});
+ const decodedBytes=depth===0?g.ArchiveEML.fromMbox(bytes).bytes:bytes;
+  const m=await PostalMime.parse(decodedBytes,{forceRfc822Attachments:true,maxNestingDepth:64,maxHeadersSize:2*1024*1024});
  if(!m.headers.length||!m.headers.some(h=>/^(from|date|subject|to|message-id|content-type)$/.test(h.key)))throw Error('MALFORMED');
  const di=dateInfo(m),atts=[];for(const a of m.attachments){atts.push({source:a,hash:await hash(a.content)});}
  const idHeaders={from:addresses(m.from),to:addresses(m.to),cc:addresses(m.cc),bcc:addresses(m.bcc),subject:norm(m.subject),date:di.date||norm(di.raw),replyTo:addresses(m.replyTo),inReplyTo:m.inReplyTo||'',references:m.references||''};
@@ -94,10 +100,10 @@ async function prepare(bytes,account,depth=0){
    hasSignedMime:/multipart\/signed|application\/(?:pkcs7-mime|x-pkcs7-mime|pgp-signature)/i.test(m.headers.find(h=>h.key==='content-type')?.value||'')
   };
   const meta={id,account,path:filepath,folder,fingerprint,messageId,subject:m.subject||'',from:idHeaders.from,to:idHeaders.to,cc:idHeaders.cc,bcc:idHeaders.bcc,date:di.date,day:di.day,rawDate:di.raw,labels:labels(m),attachments:attachmentMeta,bytes:bytes.length,mime};
- return {meta,files,body,attachments:attachmentMeta,folder,text:norm([m.text||'',clean.text].join('\n'))};
+ return {meta,files,body,attachments:attachmentMeta,folder,selectedReasons:depth===0?g.ArchiveEML.classify(m,meta.labels):[],text:norm([m.text||'',clean.text].join('\n'))};
 }
 class Importer{
- constructor(root,{onProgress=()=>{},signal=null,batchSize=50,refreshExisting=false}={}){this.refreshExisting=refreshExisting;this.root=root;this.onProgress=onProgress;this.signal=signal;this.batchSize=batchSize;this.records=new Map();this.pending=[];this.search=[];this.searchBytes=0;this.stats={read:0,new:0,duplicates:0,refreshed:0,errors:0,bytes:0,totalBytes:0,committed:0};this.issues=[];}
+ constructor(root,{onProgress=()=>{},signal=null,batchSize=50,emlPolicy={}}={}){this.emlPolicy=emlPolicy;this.root=root;this.onProgress=onProgress;this.signal=signal;this.batchSize=batchSize;this.records=new Map();this.pending=[];this.search=[];this.searchBytes=0;this.stats={read:0,new:0,duplicates:0,emlSaved:0,emlReused:0,errors:0,bytes:0,totalBytes:0,committed:0};this.issues=[];}
  async open(){this.m=await manifest(this.root);for(const seg of this.m.segments){const data=unwrap(await read(this.root,seg.meta));if(data.kind!=='metadata')throw Error('CATALOG');for(const r of data.records)this.records.set(r.account+'/'+r.id,r);}return this;}
  async lock(){const f=await fileHandle(this.root,'archive.lock',true);this.lockWriter=await f.createWritable({mode:'exclusive'});}
  async commit(){if(!this.pending.length)return;const token=crypto.randomUUID();const account=this.pending[0].account;const base=account+'/catalog/'+token;const meta=base+'.js',search=this.search.length?base+'-text.js':null;
@@ -109,16 +115,41 @@ class Importer{
  async run(files,account){accountName(account);await this.lock();try{await this.open();this.stats.totalBytes=files.reduce((s,f)=>s+f.size,0);let base=0;
   for(const file of files){if(this.signal?.aborted)break;try{for await(const raw of mbox(file,{signal:this.signal,onBytes:n=>{this.stats.bytes=base+n;}})){
    if(this.signal?.aborted)break;this.stats.read++;let p;try{if(raw.error)throw Error(raw.error);p=await prepare(raw.bytes,account);}catch(e){this.stats.errors++;this.issues.push({file:file.name,offset:raw.offset,end:raw.end,code:['MESSAGE_TOO_LARGE','MALFORMED'].includes(e.message)?e.message:'MIME_ERROR'});this.onProgress({...this.stats});continue;}
-   const key=account+'/'+p.meta.id;const old=this.records.get(key);
-   if(old){this.stats.duplicates++;const merged=[...new Set([...old.labels,...p.meta.labels])].sort();if(json(merged)!==json(old.labels)||this.refreshExisting){const labelChange=json(merged)!==json(old.labels);const updated={...old,labels:merged,mime:p.meta.mime||old.mime}; // Regenerate from the same canonical message; no new attachment files.
-     const links=new Map();for(const a of p.attachments){const digest=decodeURIComponent(a.href).split('/').pop().slice(0,64);const before=old.attachments.find(b=>b.name===a.name&&decodeURIComponent(b.href).split('/').pop().slice(0,64)===digest);if(before)links.set(a.href,before.href);}const template=document.createElement('template');template.innerHTML=p.body;for(const img of template.content.querySelectorAll('img[src]')){const mapped=links.get(img.getAttribute('src'));if(mapped)img.setAttribute('src',mapped);}await write(this.root,old.path,documentHTML(updated,template.innerHTML,old.attachments,'../'.repeat(old.folder.split('/').length)));this.records.set(key,updated);this.pending.push(updated);if(this.refreshExisting)this.stats.refreshed++;}
-   }else{for(const f of p.files)await write(this.root,f.path,f.bytes);await write(this.root,p.meta.path,documentHTML(p.meta,p.body,p.attachments,'../'.repeat(p.folder.split('/').length)));this.records.set(key,p.meta);this.pending.push(p.meta);this.search.push({key,text:p.text});this.searchBytes+=p.text.length*2;this.stats.new++;}
+   const key=account+'/'+p.meta.id,old=this.records.get(key);
+   let original=old?.original||null,originalChanged=false;
+   // Save and checksum-verify the EML before publishing a reference in HTML/catalog.
+   // Existing verified originals are reused on overlapping imports.
+   const wanted=g.ArchiveEML.selectReasons(p.selectedReasons,this.emlPolicy);
+   if(wanted.length){
+    const alreadyValid=!!original&&await g.ArchiveEML.verify(this.root,old||p.meta,original);
+    const retained=await g.ArchiveEML.preserve(this.root,old||p.meta,raw.bytes,wanted,original);
+    originalChanged=json(retained)!==json(original);original=retained;
+    if(alreadyValid)this.stats.emlReused++;else this.stats.emlSaved++;
+   }
+   if(old){
+    this.stats.duplicates++;
+    const merged=[...new Set([...old.labels,...p.meta.labels])].sort();
+    if(json(merged)!==json(old.labels)||originalChanged){
+     const updated={...old,labels:merged,mime:p.meta.mime||old.mime,...(original?{original}:{})};
+     // Regenerate only for current-format metadata/label/EML updates; new imports always use latest renderer.
+     const links=new Map();for(const a of p.attachments){const digest=decodeURIComponent(a.href).split('/').pop().slice(0,64);const before=old.attachments.find(b=>b.name===a.name&&decodeURIComponent(b.href).split('/').pop().slice(0,64)===digest);if(before)links.set(a.href,before.href);}
+     const template=document.createElement('template');template.innerHTML=p.body;
+     for(const img of template.content.querySelectorAll('img[src]')){const mapped=links.get(img.getAttribute('src'));if(mapped)img.setAttribute('src',mapped);}
+     await write(this.root,old.path,documentHTML(updated,template.innerHTML,old.attachments,'../'.repeat(old.folder.split('/').length)));
+     this.records.set(key,updated);this.pending.push(updated);
+    }
+   }else{
+    if(original)p.meta.original=original;
+    for(const f of p.files)await write(this.root,f.path,f.bytes);
+    await write(this.root,p.meta.path,documentHTML(p.meta,p.body,p.attachments,'../'.repeat(p.folder.split('/').length)));
+    this.records.set(key,p.meta);this.pending.push(p.meta);this.search.push({key,text:p.text});this.searchBytes+=p.text.length*2;this.stats.new++;
+   }
    if(this.pending.length>=this.batchSize||this.searchBytes>=4*1024*1024)await this.commit();this.onProgress({...this.stats});await new Promise(r=>setTimeout(r,0));
   }}catch(e){if(e.message==='LINE_TOO_LARGE'){this.stats.errors++;this.issues.push({file:file.name,code:'LINE_TOO_LARGE'});}else throw e;}base+=file.size;
   }
   await this.commit();const report={format:1,finished:new Date().toISOString(),interrupted:!!this.signal?.aborted,stats:this.stats,issues:this.issues};await write(this.root,account+'/catalog/import-'+crypto.randomUUID()+'.json',json(report));return report;
  }finally{if(this.lockWriter){await this.lockWriter.close();this.lockWriter=null;}}}
 }
-g.ArchiveCore={VERSION,LIMIT,MANIFEST,PREVIOUS,esc,fold,hash,json,wrap,unwrap,safeName,accountName,write,read,exists,manifest,empty,mbox,prepare,Importer,cleanHTML,documentHTML};
+g.ArchiveCore={VERSION,LIMIT,MANIFEST,PREVIOUS,esc,fold,hash,fileHandle,json,wrap,unwrap,safeName,accountName,write,read,exists,manifest,empty,mbox,prepare,Importer,cleanHTML,documentHTML};
 })(globalThis);
 
