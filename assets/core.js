@@ -98,7 +98,7 @@ async function prepare(bytes,account,depth=0){
  return {meta,files,body,attachments:attachmentMeta,folder,selectedReasons:depth===0?g.ArchiveEML.classify(m,meta.labels):[],text:norm([m.text||'',clean.text].join('\n'))};
 }
 class Importer{
- constructor(root,{onProgress=()=>{},signal=null,batchSize=50,refreshExisting=false,retainSelectedEml=true}={}){this.refreshExisting=refreshExisting;this.retainSelectedEml=retainSelectedEml;this.root=root;this.onProgress=onProgress;this.signal=signal;this.batchSize=batchSize;this.records=new Map();this.pending=[];this.search=[];this.searchBytes=0;this.stats={read:0,new:0,duplicates:0,refreshed:0,emlSaved:0,emlReused:0,errors:0,bytes:0,totalBytes:0,committed:0};this.issues=[];}
+ constructor(root,{onProgress=()=>{},signal=null,batchSize=50,refreshExisting=false,emlPolicy=null,retainSelectedEml=undefined}={}){this.refreshExisting=refreshExisting;this.emlPolicy=emlPolicy||((retainSelectedEml===false)?{signed:false,encrypted:false,starred:false,important:false}:{});this.root=root;this.onProgress=onProgress;this.signal=signal;this.batchSize=batchSize;this.records=new Map();this.pending=[];this.search=[];this.searchBytes=0;this.stats={read:0,new:0,duplicates:0,refreshed:0,emlSaved:0,emlReused:0,errors:0,bytes:0,totalBytes:0,committed:0};this.issues=[];}
  async open(){this.m=await manifest(this.root);for(const seg of this.m.segments){const data=unwrap(await read(this.root,seg.meta));if(data.kind!=='metadata')throw Error('CATALOG');for(const r of data.records)this.records.set(r.account+'/'+r.id,r);}return this;}
  async lock(){const f=await fileHandle(this.root,'archive.lock',true);this.lockWriter=await f.createWritable({mode:'exclusive'});}
  async commit(){if(!this.pending.length)return;const token=crypto.randomUUID();const account=this.pending[0].account;const base=account+'/catalog/'+token;const meta=base+'.js',search=this.search.length?base+'-text.js':null;
@@ -114,7 +114,7 @@ class Importer{
    let original=old?.original||null,originalChanged=false;
    // Save and checksum-verify the EML before publishing a reference in HTML/catalog.
    // Existing verified originals are reused on overlapping imports.
-   const wanted=this.retainSelectedEml?(p.selectedReasons.length?p.selectedReasons:original?.reasons||[]):[];
+   const wanted=g.ArchiveEML.selectReasons(p.selectedReasons,this.emlPolicy);
    if(wanted.length){
     const alreadyValid=!!original&&await g.ArchiveEML.verify(this.root,old||p.meta,original);
     const retained=await g.ArchiveEML.preserve(this.root,old||p.meta,raw.bytes,wanted,original);
