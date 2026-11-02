@@ -97,6 +97,9 @@ async function updateRootInfo(handle,{recent=false}={}){
   return;
  }
  const name=rootPathLabel(handle);
+ // Show the target immediately; an asynchronous permission/catalog check enriches it later.
+ $('dirInfo').textContent='Selected root: '+name+(recent?' (remembered)':'')+' · Checking available catalog information… · Full device path unavailable to this browser.';
+ $('reindexDirInfo').textContent='Repair target: '+name+' — the same folder selected above. Preview before rebuilding.';
  let detail='Access will be checked when you start importing or preview a repair.';
  try{
   const permission=typeof handle.queryPermission==='function'?await handle.queryPermission({mode:'readwrite'}):'granted';
