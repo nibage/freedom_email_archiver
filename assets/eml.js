@@ -16,6 +16,16 @@ function classify(mail,labels=[]){
  if(set.has('starred'))kinds.push('gmail-starred');
  return kinds;
 }
+// Independent import options; a message only needs one enabled reason.
+function selectReasons(reasons=[],policy={}){
+ const enabled={
+  signed:policy.signed!==false,
+  encrypted:policy.encrypted!==false,
+  'gmail-starred':policy.starred!==false,
+  'gmail-important':policy.important!==false
+ };
+ return [...new Set(reasons)].filter(reason=>enabled[reason]===true);
+}
 // MBOXrd escapes leading "From " lines within the message body only.
 // Extracted messages exclude the MBOX envelope, and preserve every other source byte,
 // including CRLF/LF, MIME boundaries, transfer encodings and original header folding.
@@ -73,5 +83,5 @@ async function preserve(root,meta,mboxBytes,reasons,previous){
  if(!await verify(root,meta,stored))throw Error('EML_VERIFY_FAILED');
  return stored;
 }
-g.ArchiveEML={classify,fromMbox,safeOriginal,verify,preserve};
+g.ArchiveEML={classify,selectReasons,fromMbox,safeOriginal,verify,preserve};
 })(globalThis);
