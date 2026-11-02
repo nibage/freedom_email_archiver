@@ -20,11 +20,16 @@ const empty=()=>({kind:'manifest',format:VERSION,generation:0,accounts:[],segmen
 function checkManifest(m){if(m.kind!=='manifest'||m.format!==VERSION||!Array.isArray(m.segments)||!Array.isArray(m.accounts))throw Error('FORMAT');return m;}
 const MANIFEST='assets/catalog/archive.js',PREVIOUS='assets/catalog/archive.previous.js';
 async function manifest(root){
- for(const [current,backup] of [[MANIFEST,PREVIOUS],['archive.js','archive.previous.js']]){
-  if(!await exists(root,current)&&!await exists(root,backup))continue;
-  try{return checkManifest(unwrap(await read(root,current)));}
-  catch{try{return checkManifest(unwrap(await read(root,backup)));}catch{throw Error('CATALOG');}}
+ if(await exists(root,MANIFEST)){
+  try{return checkManifest(unwrap(await read(root,MANIFEST)));}catch{
+   try{return checkManifest(unwrap(await read(root,PREVIOUS)));}catch{throw Error('CATALOG');}
+  }
  }
+ if(await exists(root,PREVIOUS)){
+  try{return checkManifest(unwrap(await read(root,PREVIOUS)));}catch{throw Error('CATALOG');}
+ }
+ // Never treat old root-manifest archives as an empty archive.
+ if(await exists(root,'archive.js')||await exists(root,'archive.previous.js'))throw Error('OLD_ARCHIVE_FORMAT');
  return empty();
 }
 // Read bounded chunks. A large/invalid line cannot grow the scanner's memory indefinitely.
@@ -98,7 +103,7 @@ async function prepare(bytes,account,depth=0){
  return {meta,files,body,attachments:attachmentMeta,folder,selectedReasons:depth===0?g.ArchiveEML.classify(m,meta.labels):[],text:norm([m.text||'',clean.text].join('\n'))};
 }
 class Importer{
- constructor(root,{onProgress=()=>{},signal=null,batchSize=50,refreshExisting=false,emlPolicy=null,retainSelectedEml=undefined}={}){this.refreshExisting=refreshExisting;this.emlPolicy=emlPolicy||((retainSelectedEml===false)?{signed:false,encrypted:false,starred:false,important:false}:{});this.root=root;this.onProgress=onProgress;this.signal=signal;this.batchSize=batchSize;this.records=new Map();this.pending=[];this.search=[];this.searchBytes=0;this.stats={read:0,new:0,duplicates:0,refreshed:0,emlSaved:0,emlReused:0,errors:0,bytes:0,totalBytes:0,committed:0};this.issues=[];}
+ constructor(root,{onProgress=()=>{},signal=null,batchSize=50,emlPolicy={}}={}){this.emlPolicy=emlPolicy;this.root=root;this.onProgress=onProgress;this.signal=signal;this.batchSize=batchSize;this.records=new Map();this.pending=[];this.search=[];this.searchBytes=0;this.stats={read:0,new:0,duplicates:0,emlSaved:0,emlReused:0,errors:0,bytes:0,totalBytes:0,committed:0};this.issues=[];}
  async open(){this.m=await manifest(this.root);for(const seg of this.m.segments){const data=unwrap(await read(this.root,seg.meta));if(data.kind!=='metadata')throw Error('CATALOG');for(const r of data.records)this.records.set(r.account+'/'+r.id,r);}return this;}
  async lock(){const f=await fileHandle(this.root,'archive.lock',true);this.lockWriter=await f.createWritable({mode:'exclusive'});}
  async commit(){if(!this.pending.length)return;const token=crypto.randomUUID();const account=this.pending[0].account;const base=account+'/catalog/'+token;const meta=base+'.js',search=this.search.length?base+'-text.js':null;
@@ -124,14 +129,14 @@ class Importer{
    if(old){
     this.stats.duplicates++;
     const merged=[...new Set([...old.labels,...p.meta.labels])].sort();
-    if(json(merged)!==json(old.labels)||this.refreshExisting||originalChanged){
+    if(json(merged)!==json(old.labels)||originalChanged){
      const updated={...old,labels:merged,mime:p.meta.mime||old.mime,...(original?{original}:{})};
-     // Preserve CID attachment paths belonging to the existing archive.
+     // Regenerate only for current-format metadata/label/EML updates; new imports always use latest renderer.
      const links=new Map();for(const a of p.attachments){const digest=decodeURIComponent(a.href).split('/').pop().slice(0,64);const before=old.attachments.find(b=>b.name===a.name&&decodeURIComponent(b.href).split('/').pop().slice(0,64)===digest);if(before)links.set(a.href,before.href);}
      const template=document.createElement('template');template.innerHTML=p.body;
      for(const img of template.content.querySelectorAll('img[src]')){const mapped=links.get(img.getAttribute('src'));if(mapped)img.setAttribute('src',mapped);}
      await write(this.root,old.path,documentHTML(updated,template.innerHTML,old.attachments,'../'.repeat(old.folder.split('/').length)));
-     this.records.set(key,updated);this.pending.push(updated);if(this.refreshExisting)this.stats.refreshed++;
+     this.records.set(key,updated);this.pending.push(updated);
     }
    }else{
     if(original)p.meta.original=original;
