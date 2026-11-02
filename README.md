@@ -28,6 +28,12 @@ Use the same archive root and account for later overlapping exports. The optiona
 
 Use Stop to commit the current batch. After a crash, reimport the source from the beginning: previously committed messages are recognized. Source files are never modified. Run only one writer per archive, including across cloud-synced computers.
 
+## Reading preferences and navigation
+
+The Browse archive toolbar has **Load external images automatically** checked by default. For messages generated with this reader version, links from the archive open the message with remote images loaded automatically when online. Uncheck it to keep remote images blocked and use the per-message **Load external images** button instead. External image requests can disclose your IP address and email-open tracking identifiers to remote services; uncheck the option for privacy-sensitive messages. A direct standalone `email-*.html` opening without the viewer's preference parameter remains blocked by default.
+
+The preference uses optional tab-scoped browser session storage, not the mail catalog or private cloud. The viewer remembers the current search filters, page and scroll location when opening a message; the Back link in newly generated message pages uses the browser's previous history entry, and the viewer also offers a session-scoped scroll restoration fallback when an older message opens the catalog through its ordinary link. Browser storage/privacy settings may prevent the fallback; Chrome's Back button remains an alternative. Older already-saved HTML pages do not yet contain the updated image auto-load and history-aware script; restoring those per-message controls requires regenerating their HTML from the MBOX or a separate HTML-only upgrade.
+
 ## Reading, backup and cloud storage
 
 Copy the **whole archive root**, including `__email_archiver`, both manifests and all account folders (or `index.html` and `assets` for a legacy archive). On another computer, make the files available locally and open `index.html`. A cloud provider's web preview is not a supported runtime. For offline use, mark the complete folder as available offline and wait for synchronization to finish.
