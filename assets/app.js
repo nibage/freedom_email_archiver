@@ -50,16 +50,15 @@ async function search(){const v=++queryVersion;currentPage=0;const terms=C.fold(
  if(v!==queryVersion)return;matches=candidates.filter(r=>found.has(r.account+'/'+r.id));render();}
 function render(){const size=+$('pageSize').value,pages=Math.max(1,Math.ceil(matches.length/size));currentPage=Math.min(currentPage,pages-1);$('rows').replaceChildren();for(const r of matches.slice(currentPage*size,(currentPage+1)*size)){const tr=document.createElement('tr');const tdDate=document.createElement('td');tdDate.className='date';tdDate.textContent=r.date?new Date(r.date).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Unknown date';const tdAddr=document.createElement('td');tdAddr.textContent=r.from||'(Not specified)';const to=document.createElement('span');to.className='address';to.textContent='To: '+(r.to||'—');tdAddr.append(to);const tdSub=document.createElement('td');const a=document.createElement('a');a.className='subject';a.textContent=r.subject||'(No subject)';a.href=localUrl(r.path.split('/').map(encodeURIComponent).join('/'))+'?fromArchive=1&images='+($('autoImages').checked?'auto':'manual');a.target='_self';a.addEventListener('click',e=>{if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey)saveReturnPosition();});tdSub.append(a);for(const text of [r.account,...r.labels]){const s=document.createElement('span');s.className='badge';s.textContent=text;tdSub.append(s);}const tdAtt=document.createElement('td');tdAtt.textContent=(r.attachments.length?'⌕ '+r.attachments.length:'—')+(r.original?' · EML':'');tr.append(tdDate,tdAddr,tdSub,tdAtt);$('rows').append(tr);}$('empty').hidden=!!matches.length;$('resultInfo').textContent=matches.length.toLocaleString('en-GB')+' messages'+(matches.length!==all.length?' of '+all.length.toLocaleString('en-GB'):'');$('pageInfo').textContent=(currentPage+1)+' / '+pages;$('prev').disabled=currentPage===0;$('next').disabled=currentPage>=pages-1;}
 let timer;for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>search().catch(showError),200);});$('pageSize').onchange=render;$('prev').onclick=()=>{currentPage--;render();};$('next').onclick=()=>{currentPage++;render();};$('reset').onclick=()=>{for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).value='';search().catch(showError);};
-function tab(which){$('browse').hidden=which!=='browse';$('import').hidden=which!=='import';$('reindex').hidden=which!=='reindex';for(const id of ['browse','import','reindex'])$(id+'Tab').classList.toggle('active',id===which);}
-$('browseTab').onclick=()=>tab('browse');$('importTab').onclick=()=>tab('import');$('reindexTab').onclick=()=>tab('reindex');
-function ready(){$('start').disabled=busy||!root||!$('files').files.length;}
-let recentRoot=null;
-function updateRecentButtons(){
- const name=recentRoot?.name||'';
- $('reuseImportDir').disabled=!recentRoot||busy;
- $('reuseReindexDir').disabled=!recentRoot||repairBusy;
- $('recentArchiveInfo').textContent=name?'Recent archive: '+name+'. Reuse it here, or choose another folder.':'No remembered archive yet. Chrome may reopen your last folder when you choose one.';
+function tab(which){
+ $('browse').hidden=which!=='browse';
+ $('import').hidden=which!=='import';
+ for(const id of ['browse','import'])$(id+'Tab').classList.toggle('active',id===which);
 }
+$('browseTab').onclick=()=>tab('browse');
+$('importTab').onclick=()=>tab('import');
+function ready(){$('start').disabled=busy||repairBusy||!root||!$('files').files.length;}
+let recentRoot=null,selectionVersion=0,accountTouched=false;
 function recentDB(){
  return new Promise((resolve,reject)=>{
   let request;try{request=indexedDB.open('offline-email-archiver-folders',1);}catch(e){reject(e);return;}
@@ -68,74 +67,109 @@ function recentDB(){
   request.onerror=()=>reject(request.error);
  });
 }
-async function loadRecent(){
- let db;
- try{
-  db=await recentDB();
-  const h=await new Promise((resolve,reject)=>{
-   const request=db.transaction('recent','readonly').objectStore('recent').get('last');
-   request.onsuccess=()=>resolve(request.result);
-   request.onerror=()=>reject(request.error);
-  });
-  if(h?.kind==='directory')recentRoot=h;
- }catch{/* Browser profile storage is optional. */}
- finally{db?.close();updateRecentButtons();}
+function dbGet(db,key){
+ return new Promise((resolve,reject)=>{
+  const request=db.transaction('recent','readonly').objectStore('recent').get(key);
+  request.onsuccess=()=>resolve(request.result);
+  request.onerror=()=>reject(request.error);
+ });
 }
-async function rememberRecent(handle){
- recentRoot=handle;updateRecentButtons();
+async function rememberAccount(value){
+ try{C.accountName(value);}catch{return;}
  let db;
  try{
   db=await recentDB();
   await new Promise((resolve,reject)=>{
    const transaction=db.transaction('recent','readwrite');
-   transaction.oncomplete=resolve;
-   transaction.onerror=()=>reject(transaction.error);
-   transaction.objectStore('recent').put(handle,'last');
+   transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error);
+   transaction.objectStore('recent').put(value,'lastAccount');
   });
- }catch{/* Keep the in-tab shortcut even when storage is blocked. */}
+ }catch{/* Browser profile storage may be disabled for local files. */}
  finally{db?.close();}
 }
-async function allowRecent(handle){
+$('importAccount').addEventListener('input',()=>{accountTouched=true;});
+$('importAccount').addEventListener('change',()=>{void rememberAccount($('importAccount').value.trim());});
+function rootPathLabel(handle){return handle?.name?handle.name+'/':'(none)';}
+async function updateRootInfo(handle,{recent=false}={}){
+ if(!handle){
+  $('dirInfo').textContent='No archive folder selected. Click Import folder root to choose one.';
+  $('reindexDirInfo').textContent='No repair target. Choose an archive root above.';
+  return;
+ }
+ const name=rootPathLabel(handle);
+ let detail='Access will be checked when you start importing or preview a repair.';
+ try{
+  const permission=typeof handle.queryPermission==='function'?await handle.queryPermission({mode:'readwrite'}):'granted';
+  if(permission==='granted'){
+   const m=await C.manifest(handle);
+   const paths=await C.catalogPaths(handle);
+   detail=m.total.toLocaleString('en-GB')+' indexed messages · viewer: '+name+paths.viewerDir+'index.html';
+  }
+ }catch{detail='Could not inspect this folder yet; choose it again if access was revoked.';}
+ // An older asynchronous inspection cannot overwrite a newly selected target.
+ if(root!==handle)return;
+ $('dirInfo').textContent='Selected root: '+name+(recent?' (remembered)':'')+' · '+detail+' · Full device path unavailable to this browser.';
+ $('reindexDirInfo').textContent='Repair target: '+name+' — the same folder selected above. Preview before rebuilding.';
+}
+function setRoot(handle,{recent=false}={}){
+ root=handle;repairPreview=0;
+ $('previewReindex').disabled=!handle||busy||repairBusy;
+ $('startReindex').disabled=true;
+ $('reindexStatus').textContent=handle?'Folder selected. Preview this root before rebuilding its catalog.':'Select an archive root above.';
+ void updateRootInfo(handle,{recent});
+ ready();
+}
+async function loadRecent(){
+ const before=selectionVersion;
+ let db;
+ try{
+  db=await recentDB();
+  const [handle,account]=await Promise.all([dbGet(db,'last'),dbGet(db,'lastAccount')]);
+  if(typeof account==='string'&&!accountTouched){
+   try{$('importAccount').value=C.accountName(account);}catch{/* Ignore stale invalid values. */}
+  }
+  if(handle?.kind==='directory'&&before===selectionVersion&&!root){
+   recentRoot=handle;
+   setRoot(handle,{recent:true});
+  }else if(handle?.kind==='directory'&&before===selectionVersion)recentRoot=handle;
+ }catch{/* Recent folder and account storage are optional. */}
+ finally{db?.close();if(!root)void updateRootInfo(null);}
+}
+async function rememberRecent(handle){
+ recentRoot=handle;
+ let db;
+ try{
+  db=await recentDB();
+  await new Promise((resolve,reject)=>{
+   const transaction=db.transaction('recent','readwrite');
+   transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error);
+   transaction.objectStore('recent').put(handle,'last');
+  });
+ }catch{/* The folder is still selected for this session. */}
+ finally{db?.close();}
+}
+async function allowRoot(handle){
+ if(!handle)throw Error('RECENT_ACCESS');
  if(typeof handle.queryPermission!=='function')return;
  if(await handle.queryPermission({mode:'readwrite'})==='granted')return;
  if(typeof handle.requestPermission==='function'&&await handle.requestPermission({mode:'readwrite'})==='granted')return;
  throw Error('RECENT_ACCESS');
 }
-function pickRoot(id){
+function pickRoot(){
  if(!window.showDirectoryPicker)throw Error('BROWSER');
- const options={mode:'readwrite',id};
+ const options={mode:'readwrite',id:'mailarchive'};
  if(recentRoot)options.startIn=recentRoot;
  return showDirectoryPicker(options);
 }
-async function selectImportRoot(chosen){
- if(chosen.name==='__email_archiver'&&await C.exists(chosen,'index.html'))throw Error('APP_SUBFOLDER');
- const m=await C.manifest(chosen);
- root=chosen;
- $('dirInfo').textContent='Import target: '+chosen.name+' · '+m.total.toLocaleString('en-GB')+' indexed messages. '+(!m.generation?'New archives install the viewer under __email_archiver/.':'Existing archive will be extended.');
- void rememberRecent(chosen);
- // Picking an import destination must not replace the current Browse archive.
- ready();
-}
-async function selectRepairRoot(chosen){
- if(chosen.name==='__email_archiver'&&await C.exists(chosen,'index.html'))throw Error('APP_SUBFOLDER');
- if(!await C.exists(chosen,'index.html')&&!await C.exists(chosen,C.VIEWER_DIR+'index.html'))throw Error('NONARCHIVE');
- repairRoot=chosen;repairPreview=0;
- $('reindexDirInfo').textContent='Repair target: '+chosen.name+'. Only this selected archive will be scanned and updated.';
- $('previewReindex').disabled=false;$('startReindex').disabled=true;
- $('reindexStatus').textContent='Selected '+chosen.name+'. Preview the file scan before rebuilding.';
- void rememberRecent(chosen);
-}
 $('chooseDir').onclick=async()=>{
- try{await selectImportRoot(await pickRoot('mailarchive'));}
- catch(e){if(e.name!=='AbortError')showError(e);}
-};
-$('reuseImportDir').onclick=async()=>{
- try{if(!recentRoot)throw Error('RECENT_ACCESS');await allowRecent(recentRoot);await selectImportRoot(recentRoot);}
- catch(e){if(e.name!=='AbortError')showError(e);}
-};
-$('reuseReindexDir').onclick=async()=>{
- try{if(!recentRoot)throw Error('RECENT_ACCESS');await allowRecent(recentRoot);await selectRepairRoot(recentRoot);}
- catch(e){if(e.name!=='AbortError')showError(e);}
+ if(busy||repairBusy)return;
+ try{
+  const chosen=await pickRoot();
+  if(chosen.name==='__email_archiver'&&await C.exists(chosen,'index.html'))throw Error('APP_SUBFOLDER');
+  selectionVersion++;
+  setRoot(chosen);
+  void rememberRecent(chosen);
+ }catch(e){if(e.name!=='AbortError')showError(e);}
 };
 void loadRecent();
 
