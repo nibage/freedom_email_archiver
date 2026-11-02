@@ -99,8 +99,9 @@ async function rebuild(root,{signal,onProgress=()=>{},batchSize=100}={}){
    created:previous.created||new Date().toISOString(),updated:new Date().toISOString(),
    accounts:[...accounts].sort(),segments,total:stats.indexed,rebuild:{scanned:stats.scanned,errors:stats.errors,brokenAttachments:stats.brokenAttachments,missingOriginals:stats.missingOriginals}};
   // Do not touch HTML or attachment files; publish last, after all shards exist.
-  await C.write(root,C.PREVIOUS,C.wrap(previous));
-  await C.write(root,C.MANIFEST,C.wrap(next));
+  const paths=await C.catalogPaths(root);
+   await C.write(root,paths.previous,C.wrap(previous));
+   await C.write(root,paths.current,C.wrap(next));
   stats.committed=true;notify();
   return {...stats,interrupted:false};
  }finally{if(lock.lockWriter)await lock.lockWriter.close();}

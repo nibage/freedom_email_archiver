@@ -3,11 +3,13 @@ async function runEnglishTests(parent){
  const C=ArchiveCore,checks=[];function check(name,ok){checks.push({name,pass:!!ok});if(!ok)throw Error(name);}
  const root=await parent.getDirectoryHandle('test-'+crypto.randomUUID(),{create:true});
  const first=()=>new File([ExampleFixtures.first],'example.mbox');let r=await new C.Importer(root,{batchSize:2}).run([first()],'example');check('First import stores four messages',r.stats.new===4&&r.stats.errors===0);
+ check('Fresh catalogs use the sibling app directory',C.MANIFEST==='__email_archiver/assets/catalog/archive.js'&&await C.exists(root,C.MANIFEST)&&await C.exists(root,C.VIEWER_DIR+'archive.lock'));
  async function contentPaths(d,p=''){const out=[];for await(const [n,h] of d.entries()){if(h.kind==='directory')out.push(...await contentPaths(h,p+n+'/'));else if(n.endsWith('.html')||p.includes('/attachments/'))out.push(p+n);}return out.sort();}
  const before=await contentPaths(root);r=await new C.Importer(root).run([first()],'example');check('Repeated import adds no messages',r.stats.new===0&&r.stats.duplicates===4);check('Repeated import adds no HTML or attachment files',JSON.stringify(before)===JSON.stringify(await contentPaths(root)));
  r=await new C.Importer(root).run([new File([ExampleFixtures.overlap],'extensionless')],'example');check('Overlapping export adds only the new message',r.stats.new===1&&r.stats.duplicates===1);
  let imp=await new C.Importer(root).open(),rows=[...imp.records.values()];check('Old messages remain present',rows.length===5);check('Gmail labels are merged',rows.find(x=>x.subject==='Welcome to your email archive').labels.includes('Saved'));check('Missing dates use the English folder',rows.find(x=>x.subject==='A note without a date').folder==='example/unknown-date');check('Metadata and text shards use the English catalog path',imp.m.segments.every(s=>s.meta.startsWith('example/catalog/')));
- const rich=rows.find(x=>x.subject==='A tiny trip plan');let html=await C.read(root,rich.path);check('Standalone message has English headers',html.includes('<dt>From</dt>')&&html.includes('<h2>Attachments</h2>'));check('CID is a local attachment URL',html.includes('src="attachments/'));check('Attachment paths are ASCII',rich.attachments.every(a=>/^[\x20-\x7e]+$/.test(a.href)));
+ const rich=rows.find(x=>x.subject==='A tiny trip plan');let html=await C.read(root,rich.path);check('Standalone message has English headers',html.includes('<dt>From</dt>')&&html.includes('<h2>Attachments</h2>'));
+ check('Standalone message backlink goes to the sibling app',html.includes('href="../../../__email_archiver/index.html"'));check('CID is a local attachment URL',html.includes('src="attachments/'));check('Attachment paths are ASCII',rich.attachments.every(a=>/^[\x20-\x7e]+$/.test(a.href)));
  const changed=ExampleFixtures.first.replace('Travel, Example','Travel, Example, Saved');await new C.Importer(root).run([new File([changed],'labels')],'example');check('Label-only update keeps attachment paths and files',JSON.stringify(before)===JSON.stringify((await contentPaths(root)).filter(x=>!x.includes(rows.find(r=>r.subject==='One more example').id))));
  const mail=(id,body)=>new TextEncoder().encode('From: a@example.invalid\nTo: b@example.invalid\nDate: Wed, 15 Jan 2025 12:00:00 +0000\n'+(id?'Message-ID: <'+id+'>\n':'')+'Subject: Synthetic\n\n'+body);const a=await C.prepare(mail('same@example.invalid','one'),'example'),b=await C.prepare(mail('same@example.invalid','two'),'example');check('Same Message-ID cannot discard different content',a.meta.id!==b.meta.id);check('Missing IDs deduplicate by content',(await C.prepare(mail('','same'),'example')).meta.id===(await C.prepare(mail('','same'),'example')).meta.id);
  const richMime=new TextEncoder().encode('From: designer@example.invalid\nTo: reader@example.invalid\nDate: Wed, 15 Jan 2025 12:00:00 +0000\nSubject: Styled sample\nMIME-Version: 1.0\nContent-Type: text/html; charset=utf-8\n\n<div style="color:#225588;font-weight:bold">Fictional formatting</div>');const parsedRich=await C.prepare(richMime,'example');check('HTML MIME import keeps safe colors and type',parsedRich.body.includes('color:#225588')&&parsedRich.body.includes('font-weight:bold'));
@@ -22,7 +24,7 @@ async function runEnglishTests(parent){
  const originalPaths=await contentPaths(root);
  const rebuilt=await ArchiveReindex.rebuild(root,{batchSize:2});
  check('Reindex from HTML succeeds without MBOX',rebuilt.indexed===5&&rebuilt.committed&&rebuilt.errors===0);
- check('Rebuild moves active manifest under assets/catalog',await C.exists(root,C.MANIFEST));
+ check('Rebuild uses sibling app manifest location',await C.exists(root,C.MANIFEST));
  check('Reindex preserves every message and attachment file',JSON.stringify(originalPaths)===JSON.stringify(await contentPaths(root)));
  const restored=new C.Importer(root);await restored.open();
  check('Rebuilt catalog preserves known messages and labels',restored.records.size===5&&[...restored.records.values()].some(x=>x.labels.includes('Saved')));
@@ -113,6 +115,14 @@ async function runEnglishTests(parent){
  catch(e){didFail=e.message==='EML_VERIFY_FAILED';}finally{C.write=realWrite;}
  check('Checksum failure prevents publishing message catalog or HTML',didFail&&(await C.manifest(failFolder)).total===0&&(await contentPaths(failFolder)).filter(p=>p.endsWith('.html')).length===0);
  const stopRoot=await parent.getDirectoryHandle('stop-'+crypto.randomUUID(),{create:true}),controller=new AbortController();r=await new C.Importer(stopRoot,{signal:controller.signal,onProgress:s=>{if(s.read>=2)controller.abort();}}).run([first()],'example');check('Cancellation commits completed messages',r.interrupted&&r.stats.new===2);r=await new C.Importer(stopRoot).run([first()],'example');check('Retry after cancellation adds only remaining messages',r.stats.new===2&&r.stats.duplicates===2);
+ const priorPaths=await contentPaths(root);
+ r=await new C.Importer(root,{refreshExisting:true}).run([first()],'example');
+ check('Reimport can reformat existing HTML while retaining EML option',r.stats.refreshed===4&&r.stats.new===0&&JSON.stringify(priorPaths)===JSON.stringify(await contentPaths(root)));
+ const legacyRoot=await parent.getDirectoryHandle('legacy-layout-'+crypto.randomUUID(),{create:true});
+ await C.write(legacyRoot,'index.html','<script src="assets/core.js"></script>');
+ check('Legacy root viewer retains its catalog location',(await C.catalogPaths(legacyRoot)).current==='assets/catalog/archive.js');
+ const legacyReport=await new C.Importer(legacyRoot).run([first()],'example');
+ check('Old root archives still import and keep root-level lock',legacyReport.stats.new===4&&await C.exists(legacyRoot,'assets/catalog/archive.js')&&await C.exists(legacyRoot,'archive.lock'));
  const lock=new C.Importer(root),other=new C.Importer(root);await lock.lock();let blocked=false;try{await other.lock();}catch{blocked=true;}finally{await lock.lockWriter.close();if(other.lockWriter)await other.lockWriter.close();}check('Concurrent writer is rejected',blocked);
  const long='From a@example.invalid Wed Jan 15 12:00:00 2025\nFrom: a@example.invalid\nSubject: First\n\nBody\nFrom a@example.invalid Wed Jan 15 12:00:00 2025\nFrom: a@example.invalid\nSubject: Long headers\nReferences: <a@example.invalid>\n'+' <b@example.invalid>\n'.repeat(1200)+'\nBody\n';check('Long folded headers do not hide a message boundary',(await Array.fromAsync(C.mbox(new File([long],'long')))).length===2);
  return {checks,passed:checks.length};
