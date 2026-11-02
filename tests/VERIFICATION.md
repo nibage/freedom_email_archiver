@@ -27,3 +27,11 @@ The `feature/selected-eml-retention` branch adds a default-on selected-category 
 The standalone source-level tests are available at `tests/eml-node.cjs` and can be run using `node tests/eml-node.cjs` without external libraries.
 
 The EML helper's classification, byte-extraction and overwrite/reuse logic were also **executed in a limited JavaScript in-memory filesystem adapter**. That test used a simple test hash (not SHA-256), so it verifies control flow and round-trip reuse but does not replace native browser integration. Syntax checks and bundle consistency checks were performed. **The full native File System Access browser suite and real multi-GB private MBOX were not run here.** Do not attribute earlier test counts to the new branch. Run `tests/index.html` on a disposable Chrome/Edge folder and check that copied EML bytes pass SHA-256 verification before using a real archive.
+
+## Current branch option defaults and migration removal
+
+The three EML options are independent: signed/encrypted **on by default**, Gmail Starred **off by default**, Gmail Important **off by default**. Each Gmail checkbox explicitly warns that storing EML uses more space, and Important may include a large number of auto-labeled emails. Browser regression tests cover Starred-only, Important-only, and both-off imports. Node tests also cover the independent selector logic.
+
+The obsolete one-time **Rebuild appearance** checkbox, legacy root manifest fallback and old-HTML recovery logic have been removed. This experimental branch requires fresh MBOX imports into a new archive or an existing archive using the current `assets/catalog/` format. The catalog repair operation only accepts valid embedded metadata and must not publish an incomplete index.
+
+These updated tests are authored but the full native File System Access browser suite has not yet been independently executed; do not interpret prior baseline counts as passing results for this branch.
