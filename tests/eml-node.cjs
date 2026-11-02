@@ -42,12 +42,12 @@ async function run(){
   assert.deepEqual(Array.from(E.selectReasons(labels,{starred:true,important:false})),['gmail-starred']);
   assert.deepEqual(Array.from(E.selectReasons(labels,{starred:false,important:true})),['gmail-important']);
   assert.deepEqual(Array.from(E.selectReasons(labels,{starred:false,important:false})),[]);
-  assert.deepEqual(Array.from(E.selectReasons(labels)),labels);
+  assert.deepEqual(Array.from(E.selectReasons(labels)),[]);
  });
  check('Signed or encrypted retention does not depend on Gmail label choices',()=>{
   const categories=['signed','encrypted','gmail-starred','gmail-important'];
   assert.deepEqual(Array.from(E.selectReasons(categories,{starred:false,important:false})),['signed','encrypted']);
-  assert.deepEqual(Array.from(E.selectReasons(categories,{signed:false,encrypted:false})),['gmail-starred','gmail-important']);
+  assert.deepEqual(Array.from(E.selectReasons(categories,{signed:false,encrypted:false,starred:true,important:true})),['gmail-starred','gmail-important']);
   assert.deepEqual(Array.from(E.selectReasons(categories,{signed:false,encrypted:false,starred:false,important:false})),[]);
  });
  const files=new Map();let writes=0,corruptWrites=false;
