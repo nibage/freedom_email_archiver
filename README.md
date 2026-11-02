@@ -28,6 +28,14 @@ Use the same archive root and account for later overlapping exports. The optiona
 
 Use Stop to commit the current batch. After a crash, reimport the source from the beginning: previously committed messages are recognized. Source files are never modified. Run only one writer per archive, including across cloud-synced computers.
 
+## Email reader updates without reimporting MBOX
+
+For HTML messages imported before automatic remote-image loading was implemented, the Browse toolbar's default-checked option alone cannot modify the scripts inside previously saved standalone HTML files. Under **Import → Rebuild the catalog → Update saved email reader controls**, use **Preview reader updates**, make a complete backup, then **Update saved readers**. This reads existing per-message HTML pages in the selected archive root and replaces **only a known, CSP-pinned legacy reader script** with the current image-loading/Back-link script. Message content, embedded catalog records, original EML, attachment files and the search catalog are not changed, so the original MBOX is not needed and no catalog rebuild is required. The upgrade is separate from Rebuild search catalog.
+
+Unknown or modified scripts are skipped. Existing current readers are skipped. A stopped upgrade leaves already-updated HTML pages intact; re-run Preview to see remaining work. Loading external images automatically can contact remote tracking services, revealing your IP address and message-open tokens. Directly opening saved HTML files, without the viewer's explicit `?images=auto` parameter, still blocks remote image requests.
+
+Import progress and notices now appear **above** the import panels, and the Browse filters use four equally sized columns: the Search field spans two columns, while From date and To date have the same width.
+
 ## Reading preferences and navigation
 
 The Browse archive toolbar has **Load external images automatically** checked by default. For messages generated with this reader version, links from the archive open the message with remote images loaded automatically when online. Uncheck it to keep remote images blocked and use the per-message **Load external images** button instead. External image requests can disclose your IP address and email-open tracking identifiers to remote services; uncheck the option for privacy-sensitive messages. A direct standalone `email-*.html` opening without the viewer's preference parameter remains blocked by default.
