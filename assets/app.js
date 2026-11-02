@@ -108,6 +108,7 @@ function pickRoot(id){
  return showDirectoryPicker(options);
 }
 async function selectImportRoot(chosen){
+ if(chosen.name==='__email_archiver'&&await C.exists(chosen,'index.html'))throw Error('APP_SUBFOLDER');
  const m=await C.manifest(chosen);
  root=chosen;
  $('dirInfo').textContent='Import target: '+chosen.name+' · '+m.total.toLocaleString('en-GB')+' indexed messages. '+(!m.generation?'New archives install the viewer under __email_archiver/.':'Existing archive will be extended.');
@@ -115,6 +116,7 @@ async function selectImportRoot(chosen){
  await readCatalog();ready();
 }
 async function selectRepairRoot(chosen){
+ if(chosen.name==='__email_archiver'&&await C.exists(chosen,'index.html'))throw Error('APP_SUBFOLDER');
  if(!await C.exists(chosen,'index.html')&&!await C.exists(chosen,C.VIEWER_DIR+'index.html'))throw Error('NONARCHIVE');
  repairRoot=chosen;repairPreview=0;
  $('reindexDirInfo').textContent='Repair target: '+chosen.name+'. Only this selected archive will be scanned and updated.';
@@ -163,7 +165,7 @@ await readCatalog();if(!report.issues.length)notice('The catalog was refreshed. 
  try{await readCatalog();}catch{}
 }finally{busy=false;$('stop').hidden=true;$('chooseDir').disabled=false;updateRecentButtons();$('files').disabled=false;$('importAccount').disabled=false;$('refreshExisting').disabled=false;$('retainSignedEml').disabled=false;$('retainStarredEml').disabled=false;$('retainImportantEml').disabled=false;ready();}};
 $('stop').onclick=()=>{controller?.abort();$('status').textContent='Finishing the current message and committing the catalog…';};
-function showError(e){const msgs={RECENT_ACCESS:'The last selected archive is no longer accessible. Choose the archive root folder again.',LOCKED:'Another import or catalog repair may already be writing to this folder. Close other archive tabs and retry.',ACCOUNT:'Enter a valid account folder name, such as personal.',BROWSER:'Import requires a current desktop Chrome or Edge with the File System Access API.',CATALOG:'The catalog could not be loaded. Check the folder is complete and retry importing from your backup.',FORMAT:'Unsupported or damaged catalog format.',NONARCHIVE:'The selected folder contains another index.html. Choose an empty folder or an archive created by this tool.',OLD_ARCHIVE_FORMAT:'This is an older archive layout. For testing, choose a new empty archive root and reimport the original MBOX. No automatic migration is performed.'};notice(msgs[e.message]||('Operation failed ('+e.name+'). Check permissions, free space and whether another tab is writing to the archive.'));}
+function showError(e){const msgs={APP_SUBFOLDER:'Choose the parent archive root, not its __email_archiver application subfolder.',RECENT_ACCESS:'The last selected archive is no longer accessible. Choose the archive root folder again.',LOCKED:'Another import or catalog repair may already be writing to this folder. Close other archive tabs and retry.',ACCOUNT:'Enter a valid account folder name, such as personal.',BROWSER:'Import requires a current desktop Chrome or Edge with the File System Access API.',CATALOG:'The catalog could not be loaded. Check the folder is complete and retry importing from your backup.',FORMAT:'Unsupported or damaged catalog format.',NONARCHIVE:'The selected folder contains another index.html. Choose an empty folder or an archive created by this tool.',OLD_ARCHIVE_FORMAT:'This is an older archive layout. For testing, choose a new empty archive root and reimport the original MBOX. No automatic migration is performed.'};notice(msgs[e.message]||('Operation failed ('+e.name+'). Check permissions, free space and whether another tab is writing to the archive.'));}
 
 let repairRoot=null,repairBusy=false,repairController=null,repairPreview=0;
 $('chooseReindexDir').onclick=async()=>{
