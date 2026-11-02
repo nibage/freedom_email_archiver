@@ -9,3 +9,5 @@
 .eml-options small{color:#526675;line-height:1.5}
 
 .refresh-choice{display:flex!important;align-items:flex-start;gap:9px;margin:14px 0;padding:10px 12px;background:#f0f6f5;border-radius:8px;font-size:14px}.refresh-choice input{width:auto!important;flex:0 0 auto;margin-top:5px}
+
+.target-actions{display:flex;flex-wrap:wrap;gap:9px;align-items:center}.target-actions button{max-width:100%}.target-actions button:disabled{opacity:.45}.target-actions+p.muted{margin-top:9px}
