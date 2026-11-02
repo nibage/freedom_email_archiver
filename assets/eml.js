@@ -21,8 +21,8 @@ function selectReasons(reasons=[],policy={}){
  const enabled={
   signed:policy.signed!==false,
   encrypted:policy.encrypted!==false,
-  'gmail-starred':policy.starred!==false,
-  'gmail-important':policy.important!==false
+  'gmail-starred':policy.starred===true,
+  'gmail-important':policy.important===true
  };
  return [...new Set(reasons)].filter(reason=>enabled[reason]===true);
 }
