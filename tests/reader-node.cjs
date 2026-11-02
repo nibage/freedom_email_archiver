@@ -16,7 +16,7 @@ const extracted=/<script>([\s\S]*?)<\/script>/.exec(page);
 assert(extracted,'Standalone email must have a reader script.');
 const script=extracted[1];
 const sha=crypto.createHash('sha256').update(script).digest('base64');
-assert(page.includes("script-src 'sha256-"+sha+"'"),'CSP must allow exactly the bundled reader script.');
+assert(page.replaceAll('&#39;',"'").includes("script-src 'sha256-"+sha+"'"),'CSP must allow exactly the bundled reader script.');
 assert(!page.includes("script-src 'unsafe-inline'"));
 const sourceIndex=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const app=fs.readFileSync(path.join(root,'assets/app.js'),'utf8');
