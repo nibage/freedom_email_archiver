@@ -8,7 +8,7 @@ A portable, offline email archive for exported MBOX files. Open the archive's `_
 
 Download and extract the repository ZIP, then open `index.html` locally. Search for `orchard`, filter by `Travel`, or open **A tiny trip plan** to see a CID image and a text attachment. A GitHub source-code page is not the archive viewer.
 
-For your real mail, select a **separate folder outside this repository** in the Import MBOX tab. Never import private mail into a checkout you intend to publish. For a new destination, the application installs its viewer under `__email_archiver/`. Open that folder's `index.html` independently. Previously created root-level viewers remain supported.
+For your real mail, click the **green Import button** and select a **separate folder outside this repository** in the import workspace. Never import private mail into a checkout you intend to publish. For a new destination, the application installs its viewer under `__email_archiver/`. Open that folder's `index.html` independently. Previously created root-level viewers remain supported.
 
 ### Two different folder choices
 
