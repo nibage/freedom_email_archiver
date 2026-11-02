@@ -35,3 +35,7 @@ The three EML options are independent: signed/encrypted **on by default**, Gmail
 The obsolete one-time **Rebuild appearance** checkbox, legacy root manifest fallback and old-HTML recovery logic have been removed. This experimental branch requires fresh MBOX imports into a new archive or an existing archive using the current `assets/catalog/` format. The catalog repair operation only accepts valid embedded metadata and must not publish an incomplete index.
 
 These updated tests are authored but the full native File System Access browser suite has not yet been independently executed; do not interpret prior baseline counts as passing results for this branch.
+
+## Integrated PR #3 and PR #4 (browser verification pending)
+
+The integrated release includes selected EML retention, optional rebuilding of existing HTML appearance, safe Stop feedback, same-tab email links, catalog refresh from the selected destination, and a sibling `__email_archiver` viewer folder in newly created archives. The installer bundle was regenerated from the current source files and syntax/manifest path checks are available. This combination has not yet received a complete independent Chrome/Edge File System Access import or 4.5 GB interruption test. Run native tests on an empty test directory and back up any existing archive before trying it with real mail.
