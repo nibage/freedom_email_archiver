@@ -15,6 +15,8 @@ jobs:
           node-version: '22'
       - name: Verify EML byte extraction and integrity
         run: node tests/eml-node.cjs
+      - name: Verify offline light/dark theme behavior
+        run: node tests/theme-node.cjs
       - name: Verify standalone reader image consent and navigation
         run: node tests/reader-node.cjs
       - name: Verify archived HTML reader upgrade is scoped and cancellable

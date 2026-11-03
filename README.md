@@ -36,6 +36,12 @@ Unknown or modified scripts are skipped. Existing current readers are skipped. A
 
 Import progress and notices now appear **above** the import panels, and the Browse filters use four equally sized columns: the Search field spans two columns, while From date and To date have the same width.
 
+## Light and dark interface themes
+
+Use the **Dark mode / Light mode** switch in the top-right header of the offline archive. Light mode follows the brick-red and soft-grey palette; dark mode uses charcoal panels and an amber/orange accent. The selected mode is kept in the browser's local storage when available, so opening the same archive again retains your choice. If the browser disables local storage, the switch still works for the currently open page. The offline Guide follows the same setting.
+
+The theme changes **only the archive application and its Guide**, not the original HTML contents of saved emails. This is deliberate: the archived messages retain their own fonts, colors and formatting so they remain human-readable without any special program. No email content, attachments, search catalog, or archive directory structure is modified when switching themes.
+
 ## Reading preferences and navigation
 
 The Browse archive toolbar has **Load external images automatically** checked by default. For messages generated with this reader version, links from the archive open the message with remote images loaded automatically when online. Uncheck it to keep remote images blocked and use the per-message **Load external images** button instead. External image requests can disclose your IP address and email-open tracking identifiers to remote services; uncheck the option for privacy-sensitive messages. A direct standalone `email-*.html` opening without the viewer's preference parameter remains blocked by default.
