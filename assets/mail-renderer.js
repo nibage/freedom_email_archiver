@@ -88,28 +88,5 @@ function documentHTML(meta,body,attachments,back){
  return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="'+esc(csp)+'"><meta name="referrer" content="no-referrer"><meta name="viewport" content="width=device-width"><title>'+esc(meta.subject||'(No subject)')+'</title><style>'+css+'</style></head><body><header><a id="backToArchive" href="'+back+'index.html">← Back to archive</a><h1>'+esc(meta.subject||'(No subject)')+'</h1><dl>'+[['Date',meta.date||'Unknown / invalid date: '+meta.rawDate],['From',meta.from],['To',meta.to],['Cc',meta.cc],['Bcc',meta.bcc],['Labels',meta.labels.join(', ')],['Message-ID',meta.messageId||'(missing)']].filter(x=>x[1]).map(([k,v])=>'<dt>'+k+'</dt><dd>'+esc(v)+'</dd>').join('')+'</dl><p class="note">Safe archive view. Safe visual formatting is preserved. External images may contact senders when auto-loading is enabled in the archive viewer; otherwise use the Load external images button.</p></header>'+control+'<main>'+body+'</main>'+(attachments.length?'<section><h2>Attachments</h2><ul>'+attachments.map(a=>'<li><a href="'+esc(a.href)+'" download="'+esc(a.name)+'">'+esc(a.name)+'</a> <small>('+a.size.toLocaleString('en-GB')+' B'+(a.quarantined?'; safety suffix .download':'')+')</small>'+(a.preview?' · <a href="'+esc(a.preview)+'">Read embedded message</a>':'')+'</li>').join('')+'</ul></section>':'')+(originalBlock)+'<script>'+messageScript+'</script>'+(embedded)+'</body></html>';
 }
 
-/* Upgrade only a previously generated, CSP-pinned reader script, not the mail body. */
-async function upgradeHtmlPage(html){
- const scriptMatches=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
- if(!html.startsWith('<!doctype html><html lang="en">')||!html.includes('class="mail-content"'))return {status:'unsupported'};
- const hasRemote=html.includes('data-remote-src=');
- if(!hasRemote)return {status:'no-remote'};
- if(scriptMatches.length!==1)return {status:'unsupported'};
- const old=scriptMatches[0][1];
- const data=new TextEncoder().encode(old);
- const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',data)));
- const bytes=String.fromCharCode(...digest);
- const hash=btoa(bytes);
- const cspMarker='script-src &#39;sha256-'+hash+'&#39;';
- if(!html.includes(cspMarker))return {status:'unsupported'};
- if(hash==="plh17SbUCiDkNbQcdgw9tWwZBAWhfuVQuyH4/S9O9WM=")return {status:'current'};
- if(hash!=="ONdzB2Snb1KGFcLxYAyUoEX6twdM5pCy78sdYqecEqs="||old!=="document.getElementById('loadRemoteImages')?.addEventListener('click',function(){document.querySelectorAll('.mail-content img[data-remote-src]').forEach(function(img){const src=img.getAttribute('data-remote-src');if(src&&/^https?:\\/\\//i.test(src)){img.setAttribute('src',src);img.removeAttribute('data-remote-src');}});this.remove();});")return {status:'unsupported'};
- // Preserve all sender content, attachments and the embedded catalog record byte-for-byte.
- let next=html.replace('script-src &#39;sha256-'+hash+'&#39;','script-src &#39;sha256-'+"plh17SbUCiDkNbQcdgw9tWwZBAWhfuVQuyH4/S9O9WM="+'&#39;');
- next=next.replace(scriptMatches[0][0],'<script>'+messageScript+'</script>');
- next=next.replace(/<header><a href="([^"]+index\.html)">← Email Archive<\/a>/,
-  '<header><a id="backToArchive" href="$1">← Back to archive</a>');
- return {status:'updated',html:next};
-}
-g.MailRenderer={cleanHTML,documentHTML,safeStyle,upgradeHtmlPage};
+g.MailRenderer={cleanHTML,documentHTML,safeStyle};
 })(globalThis);
