@@ -113,7 +113,7 @@ async function main(){
  assert.equal(otherWindow.ArchiveUI.root,null,'Another index.html must not receive this archive folder handle');
  assert.equal(otherEl('importAccount').value,'personal','Another index.html must not receive this archive account selection');
  assert(otherEl('dirInfo').textContent.includes('another-archive/'),'Another viewer must default logically to its own archive');
- assert.equal(otherEl('previewReindex').disabled,true,'A separate archive needs a one-time browser folder grant');
+ assert.equal(otherWindow.ArchiveUI.root,null,'A separate archive requires an explicit browser directory selection');
  console.log('PASS current archive root and account are remembered per index.html instance');
  console.log('PASS stale shared global folder is ignored and other destinations are not made default');
  console.log('PASS permission not requested on load; repair requests it on click');
