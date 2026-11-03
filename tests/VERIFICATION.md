@@ -59,3 +59,11 @@ The default-checked Browse image preference only affects HTML pages generated wi
 ## Brick-red light and charcoal/orange dark theme (native browser verification pending)
 
 A compact theme switch is displayed at the upper right of the archive header and Guide. Both pages share `assets/theme.js`, which applies the remembered theme before styling and saves the choice in optional localStorage. Light mode uses light cards/brick accents; dark mode uses charcoal panels and orange accents. Messages remain unmodified, preserving their sender styling. `node tests/theme-node.cjs` tests palette coverage, accessibility labels, remembered state and storage-blocked fallback. Please confirm colors and responsive layout in a real Chrome/Edge browser before considering the UI fully verified.
+
+## Self archive defaults and shared status region (manual Chrome verification pending)
+
+The current viewer's own archive is displayed as the default target. IndexedDB folder handles and account choices are keyed by `index.html` location; legacy global "last" keys are ignored, and selecting a different destination does not replace the next-startup self default. Without a previously granted directory handle, browser security requires the user to choose the archive root manually once. `tests/recent-target-node.cjs` includes two synthetic viewer instances to guard against cross-archive settings leakage.
+
+Import progress now appears after the import form and before catalog repair. Catalog scan and rebuild status use a sibling activity panel at the same position. The light header subtitle has increased contrast and Clear filters is rendered as a normal outlined button. The old saved-reader update UI and its unused implementation were removed; newer imported messages already contain the current reader controls. No stored HTML, catalog or attachments are changed by applying this interface update.
+
+Safe recovery test: copy the full archive, rename **both** `__email_archiver/assets/catalog/archive.js` and `archive.previous.js` to `.bak`, leaving all account subfolders and HTML intact. Missing-catalog load warning is expected. On that copy, manually grant the correct parent root, preview Rebuild catalog, rebuild, reopen its index.html, and verify the count and search. A non-destructive reindex test needs no renaming.
