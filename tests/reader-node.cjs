@@ -24,7 +24,7 @@ const styles=fs.readFileSync(path.join(root,'assets/style.css'),'utf8');
 assert(sourceIndex.indexOf('id="notice"')<sourceIndex.indexOf('id="import"'),'Notices must appear above import panels.');
 assert(sourceIndex.indexOf('id="progressPanel"')<sourceIndex.indexOf('class="importgrid"'),'Import progress must appear above the importer.');
 assert(styles.includes('grid-template-columns:repeat(4,minmax(0,1fr))')&&styles.includes('.filters .search{grid-column:span 2}'),'Search must retain half the filter row while dates match.');
-assert(sourceIndex.includes('id="previewReaders"')&&sourceIndex.includes('id="upgradeReaders"'),'Legacy reader repair must be available in the import workspace.');
+assert(!sourceIndex.includes('id="previewReaders"'),'Legacy reader update UI must stay removed.');
 assert(sourceIndex.includes('id="autoImages" checked'));
 assert(app.includes("images='+($('autoImages').checked?'auto':'manual')"));
 assert(app.includes('saveReturnPosition()')&&app.includes('restoreReturnPosition()'));
@@ -58,26 +58,3 @@ console.log('PASS: auto mode loads only from an explicit viewer URL');
 console.log('PASS: manual/direct mode blocks until button click');
 console.log('PASS: Back uses history for viewer links, falls back for direct pages');
 
-(async()=>{
- const oldScript=String.raw`document.getElementById('loadRemoteImages')?.addEventListener('click',function(){document.querySelectorAll('.mail-content img[data-remote-src]').forEach(function(img){const src=img.getAttribute('data-remote-src');if(src&&/^https?:\/\//i.test(src)){img.setAttribute('src',src);img.removeAttribute('data-remote-src');}});this.remove();});`;
- const oldHash=crypto.createHash('sha256').update(oldScript).digest('base64');
- assert.equal(oldHash,'ONdzB2Snb1KGFcLxYAyUoEX6twdM5pCy78sdYqecEqs=','Legacy reader fingerprint must remain exact.');
- const currentHash=crypto.createHash('sha256').update(script).digest('base64');
- const oldPage=page.replace('<script>'+script+'</script>','<script>'+oldScript+'</script>')
-  .replace('sha256-'+currentHash,'sha256-'+oldHash)
-  .replace(' id="backToArchive"','')
-  .replace('← Back to archive','← Email Archive');
- const originalBody=/<main>([\s\S]*?)<\/main>/.exec(oldPage)[1];
- const upgraded=await context.MailRenderer.upgradeHtmlPage(oldPage);
- assert.equal(upgraded.status,'updated');
- assert(upgraded.html.includes('id="backToArchive"'));
- assert(upgraded.html.includes('script-src &#39;sha256-'+currentHash+'&#39;'));
- assert.equal(/<main>([\s\S]*?)<\/main>/.exec(upgraded.html)[1],originalBody,'Mail body must not be altered');
- const again=await context.MailRenderer.upgradeHtmlPage(upgraded.html);
- assert.equal(again.status,'current','Already upgraded messages must not be rewritten');
- assert.equal((await context.MailRenderer.upgradeHtmlPage(page.replace(script,'alert(1)'))).status,'unsupported','Never rewrite an unknown script');
- const unchanged=await context.MailRenderer.upgradeHtmlPage(page.replace('data-remote-src=','data-unavailable-src='));
- assert.equal(unchanged.status,'no-remote');
- console.log('PASS: legacy remote-image reader upgrade preserves email body and CSP');
- console.log('PASS: unknown scripts are not modified; upgrades are idempotent');
-})().catch(e=>{console.error(e);process.exitCode=1;});
