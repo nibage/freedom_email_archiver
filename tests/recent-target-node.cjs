@@ -13,6 +13,7 @@ assert(html.indexOf('id="reindex"')>html.indexOf('id="import"'));
 assert(html.indexOf('class="importgrid"')<html.indexOf('id="progressPanel"'),'Import progress must be below the import form');
 assert(html.indexOf('id="progressPanel"')<html.indexOf('id="repairProgressPanel"')&&html.indexOf('id="repairProgressPanel"')<html.indexOf('id="reindex"'),'Import and repair progress must occupy the same area above repair');
 assert(!html.includes('id="previewReaders"')&&!html.includes('reader-upgrade.js'),'Retired reader upgrade must be absent');
+assert(!html.includes('id="refreshExisting"')&&src.includes('refreshExisting:true'),'Reformatting duplicates should be automatic without a checkbox');
 assert(html.includes('id="reset" class="quiet"'),'Clear filters button remains present');
 const record={account:'personal',id:'abc123',path:'personal/2025/2025-01/email-abc123.html',subject:'Fictional message',
  from:'sender@example.invalid',to:'reader@example.invalid',cc:'',bcc:'',date:'2025-01-15T12:00:00Z',
@@ -47,7 +48,7 @@ const C={VIEWER_DIR:'__email_archiver/',MANIFEST:'__email_archiver/assets/catalo
  async exists(root,p){return p==='__email_archiver/index.html'||p==='index.html';},
  async read(){throw Error('Viewer must not switch catalogs');},fold:x=>String(x||'').toLowerCase()};
 let scanned=null,repaired=null;
-const ArchiveReindex={async *scan(root){scanned=root;yield {id:'fictional'};},async rebuild(root){repaired=root;return {indexed:1,errors:0,brokenAttachments:0,interrupted:false};}};
+const ArchiveReindex={async *scan(root){scanned=root;yield {account:'personal',id:'fictional',path:'personal/2025/2025-01/email-fictional.html'};},async inspect(){return {legacy:false};},async rebuild(root){repaired=root;return {indexed:1,legacyRecovered:0,errors:0,brokenAttachments:0,interrupted:false};}};
 vm.runInNewContext(src,{window,document,indexedDB,ArchiveCore:C,ArchiveReindex,ArchiveBundle:{},
  location:{pathname:'/tmp/__email_archiver/index.html'},showDirectoryPicker:window.showDirectoryPicker,
  Option:function Option(text,value){return {text,value};},
