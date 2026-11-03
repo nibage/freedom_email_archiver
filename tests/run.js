@@ -20,8 +20,11 @@ async function runEnglishTests(parent){
  const embeddedRecord=JSON.parse(recordTag.textContent).record;
  check('Standalone HTML embeds inert structured metadata',!!recordTag&&embeddedRecord.id===rich.id&&embeddedRecord.path===rich.path);
  check('New HTML carries decoded MIME headers',embeddedRecord.mime.headers.some(h=>h.name==='content-type')&&embeddedRecord.mime.headers.some(h=>h.name==='subject'));
- const originalManifest=await C.manifest(root);
  const originalPaths=await contentPaths(root);
+ // Rebuilding must recreate the entire deleted viewer catalog directory.
+ const viewerAssets=await (await root.getDirectoryHandle('__email_archiver')).getDirectoryHandle('assets');
+ await viewerAssets.removeEntry('catalog',{recursive:true});
+ check('Catalog directory really is absent before rebuild',!await C.exists(root,C.MANIFEST));
  const rebuilt=await ArchiveReindex.rebuild(root,{batchSize:2});
  check('Reindex from HTML succeeds without MBOX',rebuilt.indexed===5&&rebuilt.committed&&rebuilt.errors===0);
  check('Rebuild uses sibling app manifest location',await C.exists(root,C.MANIFEST));
@@ -32,10 +35,13 @@ async function runEnglishTests(parent){
  const snapshot=(await C.manifest(root)).generation;
  const interrupted=await ArchiveReindex.rebuild(root,{signal:stopRebuild.signal});
  check('Cancelled rebuild never publishes a new manifest',interrupted.interrupted&&(await C.manifest(root)).generation===snapshot);
- let rejectedMissingMetadata=false;
- try{ArchiveReindex.fromHtml(stored.replace(/<script id="mail-archive-record" type="application\/json">[\s\S]*?<\/script>/,''),{account:rich.account,id:rich.id,path:rich.path,folder:rich.folder});}
- catch(e){rejectedMissingMetadata=e.message==='MISSING_EMBEDDED_METADATA';}
- check('Catalog rebuild rejects HTML without self-describing metadata',rejectedMissingMetadata);
+ const oldPage=stored.replace(/<script id="mail-archive-record" type="application\/json">[\s\S]*?<\/script>/,'');
+ const recovered=ArchiveReindex.fromHtml(oldPage,{account:rich.account,id:rich.id,path:rich.path,folder:rich.folder});
+ check('Catalog repair recovers older saved HTML from readable headers',recovered.legacy&&recovered.record.subject===rich.subject&&recovered.record.from===rich.from&&recovered.record.path===rich.path);
+ let rejectedBadMetadata=false;
+ try{ArchiveReindex.fromHtml(stored.replace(/\"schema\":1/,'\"schema\":99'),{account:rich.account,id:rich.id,path:rich.path,folder:rich.folder});}
+ catch(e){rejectedBadMetadata=e.message==='INVALID_EMBEDDED_METADATA';}
+ check('Catalog repair still rejects corrupt embedded metadata',rejectedBadMetadata);
  const unchanged=await contentPaths(root);r=await new C.Importer(root).run([first()],'example');
  check('Repeated MBOX import does not duplicate archived email files',r.stats.new===0&&JSON.stringify(unchanged)===JSON.stringify(await contentPaths(root)));
 
