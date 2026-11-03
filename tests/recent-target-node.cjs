@@ -97,6 +97,23 @@ async function main(){
  assert.equal(stored.get(selfRootKey),a,'A different import target must not become the next default');
  assert.equal(stored.get('last'),b,'Ignore stale global last folder from other archive');
  assert.equal(stored.get(selfAccountKey),'business','Account preference remains scoped to this viewer');
+ const otherElements=new Map();
+ const otherEl=id=>{if(!otherElements.has(id))otherElements.set(id,node('div',id));return otherElements.get(id);};
+ const otherWindow={showDirectoryPicker:window.showDirectoryPicker,addEventListener(){}};
+ const otherDocument={getElementById:otherEl,createElement(tag){return node(tag);},
+  head:{append(script){const name=String(script.src).split('?')[0];const response=name.endsWith('/assets/catalog/archive.js')?viewerManifest:
+    name.endsWith('/personal/catalog/one.js')?{kind:'metadata',records:[record]}:null;
+   queueMicrotask(()=>{if(response){otherWindow.MailArchive.receive(response);script.onload?.();}else script.onerror?.();});}}};
+ vm.runInNewContext(src,{window:otherWindow,document:otherDocument,indexedDB,ArchiveCore:C,ArchiveReindex,ArchiveBundle:{},
+  location:{pathname:'/another-archive/__email_archiver/index.html'},showDirectoryPicker:otherWindow.showDirectoryPicker,
+  Option:function Option(text,value){return {text,value};},
+  sessionStorage:{getItem(){return null;},setItem(){},removeItem(){}},
+  AbortController,console,setTimeout,clearTimeout,requestAnimationFrame:f=>f()},{filename:'other-instance/app.js'});
+ for(let i=0;i<10&&!otherEl('dirInfo').textContent.includes('Self archive');i++)await tick();
+ assert.equal(otherWindow.ArchiveUI.root,null,'Another index.html must not receive this archive folder handle');
+ assert.equal(otherEl('importAccount').value,'personal','Another index.html must not receive this archive account selection');
+ assert(otherEl('dirInfo').textContent.includes('another-archive/'),'Another viewer must default logically to its own archive');
+ assert.equal(otherEl('previewReindex').disabled,true,'A separate archive needs a one-time browser folder grant');
  console.log('PASS current archive root and account are remembered per index.html instance');
  console.log('PASS stale shared global folder is ignored and other destinations are not made default');
  console.log('PASS permission not requested on load; repair requests it on click');
