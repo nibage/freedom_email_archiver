@@ -1,5 +1,7 @@
 /* HTML email presentation: readable styling without remote loads or active email code. */
 (function(g){'use strict';
+// Bump when generated HTML, sanitization, or message controls change.
+const RENDER_VERSION=1;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const tags=['p','br','div','span','a','img','h1','h2','h3','h4','h5','h6','b','strong','i','em','u','s','strike','blockquote','pre','code','ul','ol','li','dl','dt','dd','table','thead','tbody','tfoot','tr','td','th','hr','sup','sub','center','font'];
 const attrs=['href','src','alt','title','colspan','rowspan','dir','lang','class','style','bgcolor','color','face','size','align','valign','width','height','border','cellpadding','cellspacing'];
@@ -93,5 +95,5 @@ function documentHTML(meta,body,attachments,back){
  return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="'+esc(csp)+'"><meta name="referrer" content="no-referrer"><meta name="viewport" content="width=device-width"><title>'+esc(meta.subject||'(No subject)')+'</title><style>'+css+'</style></head><body><header><a id="backToArchive" href="'+back+'index.html">← Back to archive</a><h1>'+esc(meta.subject||'(No subject)')+'</h1><dl>'+[['Date',meta.date||'Unknown / invalid date: '+meta.rawDate],['From',meta.from],['To',meta.to],['Cc',meta.cc],['Bcc',meta.bcc],['Labels',meta.labels.join(', ')],['Message-ID',meta.messageId||'(missing)']].filter(x=>x[1]).map(([k,v])=>'<dt>'+k+'</dt><dd>'+esc(v)+'</dd>').join('')+'</dl><p class="note">Safe archive view. Safe visual formatting is preserved. External images may contact senders when auto-loading is enabled in the archive viewer; otherwise use the Load external images button. Image placeholders explain why a source is not displayed; a blocked image alone does not mean that the email is malicious.</p></header>'+control+'<main>'+body+'</main>'+(attachments.length?'<section><h2>Attachments</h2><ul>'+attachments.map(a=>'<li><a href="'+esc(a.href)+'" download="'+esc(a.name)+'">'+esc(a.name)+'</a> <small>('+a.size.toLocaleString('en-GB')+' B'+(a.quarantined?'; safety suffix .download':'')+')</small>'+(a.preview?' · <a href="'+esc(a.preview)+'">Read embedded message</a>':'')+'</li>').join('')+'</ul></section>':'')+(originalBlock)+'<script>'+messageScript+'</script>'+(embedded)+'</body></html>';
 }
 
-g.MailRenderer={cleanHTML,documentHTML,safeStyle};
+g.MailRenderer={RENDER_VERSION,cleanHTML,documentHTML,safeStyle};
 })(globalThis);

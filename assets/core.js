@@ -63,7 +63,7 @@ function addresses(a){if(!a)return '';if(!Array.isArray(a))a=[a];return a.map(x=
 function invalidCalendarDate(raw){const months=['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];let m=/(?:^|,\s*)(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{2,4})\b/i.exec(raw),y,month,day;if(m){day=+m[1];month=months.indexOf(m[2].toLowerCase());y=+m[3];if(y<100)y+=y<50?2000:1900;}else{m=/^(\d{4})-(\d{2})-(\d{2})(?:T|\s|$)/.exec(raw);if(!m)return false;y=+m[1];month=+m[2]-1;day=+m[3];}return month<0||month>11||day<1||day>new Date(Date.UTC(y,month+1,0)).getUTCDate();}
 function dateInfo(m){const raw=m.headers.find(h=>h.key==='date')?.value||'';const d=new Date(m.date||'');if(!raw||invalidCalendarDate(raw)||!Number.isFinite(+d)||d.getUTCFullYear()<1601||d.getUTCFullYear()>9999)return {date:null,day:'',folder:'unknown-date',raw};return {date:d.toISOString(),day:d.toISOString().slice(0,10),folder:d.toISOString().slice(0,4)+'/'+d.toISOString().slice(0,7),raw};}
 function labels(m){const out=[];for(const h of m.headers.filter(h=>h.key==='x-gmail-labels')){const v=g.decodeWords(h.value);let token='',quote=false;for(const c of v){if(c==='"'){quote=!quote;continue;}if(c===','&&!quote){if(token.trim())out.push(token.trim());token='';}else token+=c;}if(token.trim())out.push(token.trim());}return [...new Set(out)].sort();}
-const {cleanHTML,documentHTML}=g.MailRenderer;
+const {cleanHTML,documentHTML,RENDER_VERSION}=g.MailRenderer;
 function extensionSafe(name,type){return /\.(?:html?|xhtml|svg|xml|mhtml?|js|mjs|cjs|hta|exe|com|scr|bat|cmd|ps1|vbs|vbe|wsf|url|lnk|desktop|sh|reg|msi)$/i.test(name)||/^(text\/html|image\/svg\+xml|application\/(?:xhtml\+xml|javascript|xml))$/i.test(type);}
 async function prepare(bytes,account,depth=0,viewerDir=''){
  const decodedBytes=depth===0?g.ArchiveEML.fromMbox(bytes).bytes:bytes;
@@ -101,7 +101,7 @@ async function prepare(bytes,account,depth=0,viewerDir=''){
    signatureHeaders:m.headers.filter(h=>/^(dkim-signature|authentication-results|arc-seal|arc-message-signature|arc-authentication-results)$/.test(h.key)).map(h=>({name:h.key,value:String(h.value??'')})),
    hasSignedMime:/multipart\/signed|application\/(?:pkcs7-mime|x-pkcs7-mime|pgp-signature)/i.test(m.headers.find(h=>h.key==='content-type')?.value||'')
   };
-  const meta={id,account,path:filepath,folder,fingerprint,messageId,subject:m.subject||'',from:idHeaders.from,to:idHeaders.to,cc:idHeaders.cc,bcc:idHeaders.bcc,date:di.date,day:di.day,rawDate:di.raw,labels:labels(m),attachments:attachmentMeta,bytes:bytes.length,mime};
+  const meta={id,account,path:filepath,folder,fingerprint,messageId,subject:m.subject||'',from:idHeaders.from,to:idHeaders.to,cc:idHeaders.cc,bcc:idHeaders.bcc,date:di.date,day:di.day,rawDate:di.raw,labels:labels(m),attachments:attachmentMeta,bytes:bytes.length,mime,renderVersion:RENDER_VERSION};
  return {meta,files,body,attachments:attachmentMeta,folder,selectedReasons:depth===0?g.ArchiveEML.classify(m,meta.labels):[],text:norm([m.text||'',clean.text].join('\n'))};
 }
 class Importer{
@@ -131,14 +131,16 @@ class Importer{
    if(old){
     this.stats.duplicates++;
     const merged=[...new Set([...old.labels,...p.meta.labels])].sort();
-    if(json(merged)!==json(old.labels)||originalChanged||this.refreshExisting){
-     const updated={...old,labels:merged,mime:p.meta.mime||old.mime,...(original?{original}:{})};
+    // Imported HTML predating this marker is refreshed once; current pages are not rewritten.
+    const needsAppearanceRefresh=this.refreshExisting||old.renderVersion!==RENDER_VERSION;
+    if(json(merged)!==json(old.labels)||originalChanged||needsAppearanceRefresh){
+     const updated={...old,labels:merged,mime:p.meta.mime||old.mime,renderVersion:RENDER_VERSION,...(original?{original}:{})};
      // Regenerate only for current-format metadata/label/EML updates; new imports always use latest renderer.
      const links=new Map();for(const a of p.attachments){const digest=decodeURIComponent(a.href).split('/').pop().slice(0,64);const before=old.attachments.find(b=>b.name===a.name&&decodeURIComponent(b.href).split('/').pop().slice(0,64)===digest);if(before)links.set(a.href,before.href);}
      const template=document.createElement('template');template.innerHTML=p.body;
      for(const img of template.content.querySelectorAll('img[src]')){const mapped=links.get(img.getAttribute('src'));if(mapped)img.setAttribute('src',mapped);}
      await write(this.root,old.path,documentHTML(updated,template.innerHTML,old.attachments,'../'.repeat(old.folder.split('/').length)+this.paths.viewerDir));
-     this.records.set(key,updated);this.pending.push(updated);if(this.refreshExisting)this.stats.refreshed++;
+     this.records.set(key,updated);this.pending.push(updated);if(needsAppearanceRefresh)this.stats.refreshed++;
     }
    }else{
     if(original)p.meta.original=original;
