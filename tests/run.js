@@ -6,6 +6,14 @@ async function runEnglishTests(parent){
  check('Fresh catalogs use the sibling app directory',C.MANIFEST==='__email_archiver/assets/catalog/archive.js'&&await C.exists(root,C.MANIFEST)&&await C.exists(root,C.VIEWER_DIR+'archive.lock'));
  async function contentPaths(d,p=''){const out=[];for await(const [n,h] of d.entries()){if(h.kind==='directory')out.push(...await contentPaths(h,p+n+'/'));else if(n.endsWith('.html')||p.includes('/attachments/'))out.push(p+n);}return out.sort();}
  const before=await contentPaths(root);r=await new C.Importer(root).run([first()],'example');check('Repeated import adds no messages',r.stats.new===0&&r.stats.duplicates===4);check('Repeated import adds no HTML or attachment files',JSON.stringify(before)===JSON.stringify(await contentPaths(root)));
+ check('Current renderer duplicates skip HTML and catalog writes',r.stats.refreshed===0&&r.stats.committed===0);
+ const firstManifest=await C.manifest(root),oldShard=firstManifest.segments[0].meta,oldShardData=C.unwrap(await C.read(root,oldShard));
+ check('Newly imported records carry a renderer marker',oldShardData.records[0].renderVersion===MailRenderer.RENDER_VERSION);
+ delete oldShardData.records[0].renderVersion;await C.write(root,oldShard,C.wrap(oldShardData));
+ r=await new C.Importer(root).run([first()],'example');
+ check('Old unversioned HTML refreshes automatically just once',r.stats.refreshed===1&&r.stats.new===0);
+ r=await new C.Importer(root).run([first()],'example');
+ check('Upgraded HTML is skipped by the following reimport',r.stats.refreshed===0&&r.stats.committed===0);
  r=await new C.Importer(root).run([new File([ExampleFixtures.overlap],'extensionless')],'example');check('Overlapping export adds only the new message',r.stats.new===1&&r.stats.duplicates===1);
  let imp=await new C.Importer(root).open(),rows=[...imp.records.values()];check('Old messages remain present',rows.length===5);check('Gmail labels are merged',rows.find(x=>x.subject==='Welcome to your email archive').labels.includes('Saved'));check('Missing dates use the English folder',rows.find(x=>x.subject==='A note without a date').folder==='example/unknown-date');check('Metadata and text shards use the English catalog path',imp.m.segments.every(s=>s.meta.startsWith('example/catalog/')));
  const rich=rows.find(x=>x.subject==='A tiny trip plan');let html=await C.read(root,rich.path);check('Standalone message has English headers',html.includes('<dt>From</dt>')&&html.includes('<h2>Attachments</h2>'));
