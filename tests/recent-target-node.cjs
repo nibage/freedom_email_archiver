@@ -83,6 +83,7 @@ async function main(){
  assert.equal(scanned,a);
  await element('startReindex').onclick();
  assert.equal(repaired,a,'Repair must use same root as import');
+  assert.equal(element('operationNotice').textContent,'Rebuilt the catalog only in tmp/','Rebuild message should be short and below progress');
  assertBrowse('after repairing remembered target');
  await element('chooseDir').onclick();
  assert.equal(window.ArchiveUI.root,b,'Picker changes shared import/repair root');
