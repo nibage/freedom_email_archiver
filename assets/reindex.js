@@ -33,10 +33,40 @@ const safeAttachmentHref=href=>{
   return /^attachments\/[^\/\\:\x00-\x1f]+$/.test(v)&&!v.includes('..')&&!v.includes('?')&&!v.includes('#');
  }catch{return false;}
 };
+function legacyRecord(fragment,source){
+ // Older standalone pages do not have embedded JSON. Recover only printed header fields.
+ const header=fragment.querySelector('header'),main=fragment.querySelector('main'),heading=header?.querySelector('h1');
+ if(!heading||!main)throw Error('MISSING_EMBEDDED_METADATA');
+ const fields={};
+ for(const dt of header.querySelectorAll('dl dt')){
+  const dd=dt.nextElementSibling;
+  if(dd?.tagName==='DD')fields[(dt.textContent||'').trim().toLowerCase()]=(dd.textContent||'').trim();
+ }
+ const rawDate=fields.date||'',parsed=Date.parse(rawDate),date=Number.isFinite(parsed)?new Date(parsed).toISOString():null;
+ const attachments=[];
+ for(const section of fragment.querySelectorAll('section')){
+  if((section.querySelector('h2')?.textContent||'').trim().toLowerCase()!=='attachments')continue;
+  for(const li of section.querySelectorAll('li')){
+   const a=li.querySelector('a[href]');if(!a)continue;
+   const href=a.getAttribute('href');if(!safeAttachmentHref(href))throw Error('INVALID_ATTACHMENT_REFERENCE');
+   const sizeText=li.querySelector('small')?.textContent||'',sizeMatch=/\(([\d,]+)\s*B\b/.exec(sizeText);
+   const preview=Array.from(li.querySelectorAll('a[href]')).slice(1).map(link=>link.getAttribute('href')).find(x=>safeAttachmentHref(x));
+   attachments.push({href,name:a.getAttribute('download')||a.textContent||'attachment',size:sizeMatch?Number(sizeMatch[1].replace(/,/g,'')):0,
+    ...(preview?{preview}:{}),...(sizeText.includes('.download')?{quarantined:true}:{})});
+  }
+ }
+ return {id:source.id,account:source.account,folder:source.folder,path:source.path,
+  subject:(heading.textContent||'').trim()||'(No subject)',from:fields.from||'',to:fields.to||'',cc:fields.cc||'',bcc:fields.bcc||'',
+  date,day:date?.slice(0,10)||null,rawDate,messageId:fields['message-id']||'',
+  labels:fields.labels?fields.labels.split(',').map(s=>s.trim()).filter(Boolean):[],attachments,bytes:0};
+}
 function fromHtml(html,source){
  const t=document.createElement('template');t.innerHTML=html;
- const fragment=t.content,embedded=fragment.querySelector('#mail-archive-record[type="application/json"]');
- if(!embedded)throw Error('MISSING_EMBEDDED_METADATA');
+ const fragment=t.content,embedded=fragment.querySelector('#mail-archive-record[type="application/json"]'),legacy=!embedded;
+ if(legacy){
+  const record=legacyRecord(fragment,source);
+  return {record,text:C.fold(fragment.querySelector('main')?.textContent||''),legacy};
+ }
  let data;
  try{data=JSON.parse(embedded.textContent);}catch{throw Error('INVALID_EMBEDDED_METADATA');}
  const r=data?.record;
@@ -48,17 +78,18 @@ function fromHtml(html,source){
  });
  if(r.original&&!g.ArchiveEML.safeOriginal(r.original,source.id))throw Error('INVALID_ORIGINAL_REFERENCE');
  const text=fragment.querySelector('main')?.textContent||'';
- return {record:{...r,attachments},text:C.fold(text)};
+ return {record:{...r,attachments},text:C.fold(text),legacy};
 }
+async function inspect(source){return fromHtml(await (await source.handle.getFile()).text(),source);}
 async function rebuild(root,{signal,onProgress=()=>{},batchSize=100}={}){
  const lock=new C.Importer(root);
  await lock.lock();
- const stats={scanned:0,indexed:0,duplicates:0,errors:0,brokenAttachments:0,missingOriginals:0,segments:0,committed:false};
+ const stats={scanned:0,indexed:0,legacyRecovered:0,duplicates:0,errors:0,brokenAttachments:0,missingOriginals:0,segments:0,committed:false};
  const notify=()=>onProgress({...stats});
  try{
   let previous;
   try{previous=await C.manifest(root);}catch{previous=C.empty();}
-  const seen=new Set(),segments=[],accounts=new Set();
+  const seen=new Set(),segments=[],accounts=new Set(),failures=[];
   const token=crypto.randomUUID(),batch=[],search=[];
   let bucket=null;
   const flush=async()=>{
@@ -79,8 +110,8 @@ async function rebuild(root,{signal,onProgress=()=>{},batchSize=100}={}){
    try{
     if(bucket!==null&&bucket!==source.account)await flush();
     bucket=source.account;
-    const page=await (await source.handle.getFile()).text();
-    const {record,text}=fromHtml(page,source);
+    const {record,text,legacy}=await inspect(source);
+    if(legacy)stats.legacyRecovered++;
     for(const a of record.attachments){
      try{if(!await C.exists(root,source.folder+'/'+decodeURIComponent(a.href)))stats.brokenAttachments++;}
      catch{stats.brokenAttachments++;}
@@ -88,12 +119,12 @@ async function rebuild(root,{signal,onProgress=()=>{},batchSize=100}={}){
     if(record.original&&!await C.exists(root,source.folder+'/'+record.original.href))stats.missingOriginals++;
     batch.push(record);search.push({key,text});accounts.add(source.account);stats.indexed++;
     if(batch.length>=batchSize)await flush();
-   }catch{stats.errors++;}
+   }catch(e){stats.errors++;if(failures.length<5)failures.push({path:source.path,code:e.message||e.name||'READ_ERROR'});}
    if(stats.scanned%25===0){notify();await new Promise(resolve=>setTimeout(resolve,0));}
   }
   if(signal?.aborted)return {...stats,interrupted:true};
   // A partial replacement index could hide otherwise intact messages.
-  if(stats.errors||stats.duplicates)throw Error('REINDEX_INCOMPLETE');
+  if(stats.errors||stats.duplicates){const err=Error('REINDEX_INCOMPLETE');err.details={...stats,failures,previousCatalog:previous.segments.length>0};throw err;}
   await flush();
   const next={kind:'manifest',format:C.VERSION,generation:(previous.generation||0)+1,
    created:previous.created||new Date().toISOString(),updated:new Date().toISOString(),
@@ -106,5 +137,5 @@ async function rebuild(root,{signal,onProgress=()=>{},batchSize=100}={}){
   return {...stats,interrupted:false};
  }finally{if(lock.lockWriter)await lock.lockWriter.close();}
 }
-g.ArchiveReindex={scan,fromHtml,rebuild,safeAttachmentHref};
+g.ArchiveReindex={scan,fromHtml,inspect,rebuild,safeAttachmentHref};
 })(globalThis);

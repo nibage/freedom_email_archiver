@@ -67,11 +67,16 @@ function cleanHTML(html,cids={}){
    else if(src.length<=4*1024*1024&&/^data:image\/(?:png|jpeg|gif|webp|bmp);base64,[a-z0-9+/=]+$/i.test(src))el.setAttribute('src',src);
    else{
     el.removeAttribute('src');
-    if(/^https?:\/\//i.test(src))el.setAttribute('data-remote-src',src);
-    el.setAttribute('alt',el.getAttribute('alt')||(src?'[Image blocked]':'[Image unavailable]'));
+    const remote=/^https?:\/\//i.test(src);
+    if(remote)el.setAttribute('data-remote-src',src);
+    const reason=remote?'External image. Loading it contacts a remote server; if allowed, that server may still be unavailable.'
+     :/^cid:/i.test(src)?'Inline image attachment missing, unsupported or not linked to this message.'
+     :/^data:/i.test(src)?'Embedded image type or encoding is unsupported, or the data exceeds 4 MiB.'
+     :src?'Unsafe or unsupported image URL was removed.':'No usable image source remains after sanitization.';
+    el.setAttribute('title',reason);
+    if(!el.getAttribute('alt'))el.setAttribute('alt',remote?'[External image unavailable]':'[Image not displayed: '+reason+']');
    }
-  }
- }
+  } }
  return {html:wrapper.outerHTML,text:wrapper.textContent||''};
 }
 const messageScript="(()=>{'use strict';const u=new URLSearchParams(location.search);const button=document.getElementById('loadRemoteImages');const load=()=>{document.querySelectorAll('.mail-content img[data-remote-src]').forEach(img=>{const src=img.getAttribute('data-remote-src');if(src&&/^https?:\\/\\//i.test(src)){img.setAttribute('src',src);img.removeAttribute('data-remote-src');}});button?.remove();};button?.addEventListener('click',load);if(u.get('images')==='auto')load();const back=document.getElementById('backToArchive');if(back&&u.get('fromArchive')==='1')back.addEventListener('click',e=>{if(history.length>1){e.preventDefault();history.back();}});})();";
@@ -85,7 +90,7 @@ function documentHTML(meta,body,attachments,back){
  const control=hasRemote?'<div class="external-images"><button id="loadRemoteImages" type="button">Load external images (contacts remote servers; may expose tracking)</button></div>':'';
  const original=meta.original&&g.ArchiveEML.safeOriginal(meta.original,meta.id)?meta.original:null;
  const originalBlock=original?'<section class="original-copy"><h2>Preserved source EML</h2><p><a href="'+esc(original.href)+'" download="email-'+esc(meta.id)+'.eml">Download EML source message</a> · '+Number(original.size).toLocaleString('en-GB')+' bytes</p><p class="note">SHA-256: <code>'+esc(original.sha256)+'</code></p><p class="note">Checksum verified when saved. Sender signatures are not verified. The file is reconstructed from the MBOX message; the MBOX envelope was excluded.</p></section>':'';
- return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="'+esc(csp)+'"><meta name="referrer" content="no-referrer"><meta name="viewport" content="width=device-width"><title>'+esc(meta.subject||'(No subject)')+'</title><style>'+css+'</style></head><body><header><a id="backToArchive" href="'+back+'index.html">← Back to archive</a><h1>'+esc(meta.subject||'(No subject)')+'</h1><dl>'+[['Date',meta.date||'Unknown / invalid date: '+meta.rawDate],['From',meta.from],['To',meta.to],['Cc',meta.cc],['Bcc',meta.bcc],['Labels',meta.labels.join(', ')],['Message-ID',meta.messageId||'(missing)']].filter(x=>x[1]).map(([k,v])=>'<dt>'+k+'</dt><dd>'+esc(v)+'</dd>').join('')+'</dl><p class="note">Safe archive view. Safe visual formatting is preserved. External images may contact senders when auto-loading is enabled in the archive viewer; otherwise use the Load external images button.</p></header>'+control+'<main>'+body+'</main>'+(attachments.length?'<section><h2>Attachments</h2><ul>'+attachments.map(a=>'<li><a href="'+esc(a.href)+'" download="'+esc(a.name)+'">'+esc(a.name)+'</a> <small>('+a.size.toLocaleString('en-GB')+' B'+(a.quarantined?'; safety suffix .download':'')+')</small>'+(a.preview?' · <a href="'+esc(a.preview)+'">Read embedded message</a>':'')+'</li>').join('')+'</ul></section>':'')+(originalBlock)+'<script>'+messageScript+'</script>'+(embedded)+'</body></html>';
+ return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="'+esc(csp)+'"><meta name="referrer" content="no-referrer"><meta name="viewport" content="width=device-width"><title>'+esc(meta.subject||'(No subject)')+'</title><style>'+css+'</style></head><body><header><a id="backToArchive" href="'+back+'index.html">← Back to archive</a><h1>'+esc(meta.subject||'(No subject)')+'</h1><dl>'+[['Date',meta.date||'Unknown / invalid date: '+meta.rawDate],['From',meta.from],['To',meta.to],['Cc',meta.cc],['Bcc',meta.bcc],['Labels',meta.labels.join(', ')],['Message-ID',meta.messageId||'(missing)']].filter(x=>x[1]).map(([k,v])=>'<dt>'+k+'</dt><dd>'+esc(v)+'</dd>').join('')+'</dl><p class="note">Safe archive view. Safe visual formatting is preserved. External images may contact senders when auto-loading is enabled in the archive viewer; otherwise use the Load external images button. Image placeholders explain why a source is not displayed; a blocked image alone does not mean that the email is malicious.</p></header>'+control+'<main>'+body+'</main>'+(attachments.length?'<section><h2>Attachments</h2><ul>'+attachments.map(a=>'<li><a href="'+esc(a.href)+'" download="'+esc(a.name)+'">'+esc(a.name)+'</a> <small>('+a.size.toLocaleString('en-GB')+' B'+(a.quarantined?'; safety suffix .download':'')+')</small>'+(a.preview?' · <a href="'+esc(a.preview)+'">Read embedded message</a>':'')+'</li>').join('')+'</ul></section>':'')+(originalBlock)+'<script>'+messageScript+'</script>'+(embedded)+'</body></html>';
 }
 
 g.MailRenderer={cleanHTML,documentHTML,safeStyle};
