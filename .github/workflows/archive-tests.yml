@@ -21,6 +21,8 @@ jobs:
         run: node tests/reader-node.cjs
       - name: Verify recent-folder picker and repair target isolation
         run: node tests/recent-target-node.cjs
+      - name: Verify duplicate reimports skip mail rendering
+        run: node tests/importer-lazy-node.cjs
       - name: Verify only fictional email data are public
         run: node scripts/check-public.cjs
       - name: Verify offline installer is reproducible

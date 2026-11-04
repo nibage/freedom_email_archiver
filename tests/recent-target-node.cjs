@@ -12,6 +12,7 @@ assert(!html.includes('id="chooseReindexDir"'));
 assert(html.indexOf('id="reindex"')>html.indexOf('id="import"'));
 assert(html.indexOf('class="importgrid"')<html.indexOf('id="progressPanel"'),'Import progress must be below the import form');
 assert(html.indexOf('id="progressPanel"')<html.indexOf('id="repairProgressPanel"')&&html.indexOf('id="repairProgressPanel"')<html.indexOf('id="reindex"'),'Import and repair progress must occupy the same area above repair');
+assert(html.indexOf('id="operationNotice"')>html.indexOf('id="repairProgressPanel"')&&html.indexOf('id="operationNotice"')<html.indexOf('id="reindex"'),'All operation outcomes must be below the common progress area');
 assert(!html.includes('id="previewReaders"')&&!html.includes('reader-upgrade.js'),'Retired reader upgrade must be absent');
 assert(!html.includes('id="refreshExisting"')&&!src.includes('refreshExisting:true'),'Normal reimports must not force rewriting every duplicate');
 assert(html.includes('id="reset" class="quiet"'),'Clear filters button remains present');
@@ -82,6 +83,7 @@ async function main(){
  assert.equal(scanned,a);
  await element('startReindex').onclick();
  assert.equal(repaired,a,'Repair must use same root as import');
+  assert.equal(element('operationNotice').textContent,'Rebuilt the catalog only in tmp/','Rebuild message should be short and below progress');
  assertBrowse('after repairing remembered target');
  await element('chooseDir').onclick();
  assert.equal(window.ArchiveUI.root,b,'Picker changes shared import/repair root');

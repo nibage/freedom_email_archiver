@@ -65,9 +65,9 @@ function dateInfo(m){const raw=m.headers.find(h=>h.key==='date')?.value||'';cons
 function labels(m){const out=[];for(const h of m.headers.filter(h=>h.key==='x-gmail-labels')){const v=g.decodeWords(h.value);let token='',quote=false;for(const c of v){if(c==='"'){quote=!quote;continue;}if(c===','&&!quote){if(token.trim())out.push(token.trim());token='';}else token+=c;}if(token.trim())out.push(token.trim());}return [...new Set(out)].sort();}
 const {cleanHTML,documentHTML,RENDER_VERSION}=g.MailRenderer;
 function extensionSafe(name,type){return /\.(?:html?|xhtml|svg|xml|mhtml?|js|mjs|cjs|hta|exe|com|scr|bat|cmd|ps1|vbs|vbe|wsf|url|lnk|desktop|sh|reg|msi)$/i.test(name)||/^(text\/html|image\/svg\+xml|application\/(?:xhtml\+xml|javascript|xml))$/i.test(type);}
-async function prepare(bytes,account,depth=0,viewerDir=''){
+async function prepare(bytes,account,depth=0,viewerDir='',{lazy=false}={}){
  const decodedBytes=depth===0?g.ArchiveEML.fromMbox(bytes).bytes:bytes;
-  const m=await PostalMime.parse(decodedBytes,{forceRfc822Attachments:true,maxNestingDepth:64,maxHeadersSize:2*1024*1024});
+ const m=await PostalMime.parse(decodedBytes,{forceRfc822Attachments:true,maxNestingDepth:64,maxHeadersSize:2*1024*1024});
  if(!m.headers.length||!m.headers.some(h=>/^(from|date|subject|to|message-id|content-type)$/.test(h.key)))throw Error('MALFORMED');
  const di=dateInfo(m),atts=[];for(const a of m.attachments){atts.push({source:a,hash:await hash(a.content)});}
  const idHeaders={from:addresses(m.from),to:addresses(m.to),cc:addresses(m.cc),bcc:addresses(m.bcc),subject:norm(m.subject),date:di.date||norm(di.raw),replyTo:addresses(m.replyTo),inReplyTo:m.inReplyTo||'',references:m.references||''};
@@ -75,7 +75,22 @@ async function prepare(bytes,account,depth=0,viewerDir=''){
  const fingerprint=await hash(json({headers:idHeaders,text:norm(m.text||'').replace(/\n+$/,''),html:norm(m.html||'').replace(/\n+$/,''),attachments:atts.map(a=>({hash:a.hash,name:norm(a.source.filename||''),type:a.source.mimeType,cid:a.source.contentId||''})).sort((a,b)=>json(a).localeCompare(json(b)))}));
  const messageId=(m.messageId||'').trim();const id=await hash('mail-v1\n'+messageId+'\n'+fingerprint);
  const folder=account+'/'+di.folder, filepath=folder+'/email-'+id+'.html';
- const cids={},files=[],attachmentMeta=[];
+ const mime={
+   note:'Decoded MIME metadata, not a byte-exact RFC 5322 source or verified signature',
+   headers:m.headers.map(h=>({name:h.key,value:String(h.value??'')})),
+   topLevelType:String(m.headers.find(h=>h.key==='content-type')?.value||'text/plain'),
+   mimeVersion:String(m.headers.find(h=>h.key==='mime-version')?.value||''),
+   transferEncoding:String(m.headers.find(h=>h.key==='content-transfer-encoding')?.value||''),
+   hasText:!!m.text,hasHtml:!!m.html,
+   signatureHeaders:m.headers.filter(h=>/^(dkim-signature|authentication-results|arc-seal|arc-message-signature|arc-authentication-results)$/.test(h.key)).map(h=>({name:h.key,value:String(h.value??'')})),
+   hasSignedMime:/multipart\/signed|application\/(?:pkcs7-mime|x-pkcs7-mime|pgp-signature)/i.test(m.headers.find(h=>h.key==='content-type')?.value||'')
+  };
+ const meta={id,account,path:filepath,folder,fingerprint,messageId,subject:m.subject||'',from:idHeaders.from,to:idHeaders.to,cc:idHeaders.cc,bcc:idHeaders.bcc,date:di.date,day:di.day,rawDate:di.raw,labels:labels(m),attachments:[],bytes:bytes.length,mime,renderVersion:RENDER_VERSION};
+ // Identify duplicates and their retention policy before constructing rendered HTML or previews.
+ const result={meta,files:[],body:null,attachments:meta.attachments,folder,selectedReasons:depth===0?g.ArchiveEML.classify(m,meta.labels):[],text:''};
+ result.render=async()=>{
+  if(result.body!==null)return result;
+   const cids={},files=[],attachmentMeta=[];
  for(let i=0;i<atts.length;i++){
   const {source:a,hash:ah}=atts[i];let name=safeName(a.filename||('attachment-'+(i+1)+(a.mimeType==='message/rfc822'?'.eml':'')));
   const quarantine=extensionSafe(name,a.mimeType);const stored=ah+(/(\.[a-z0-9]{1,12})$/i.exec(name)?.[1].toLowerCase()||'.bin')+(quarantine?'.download':'');const href='attachments/'+encodeURIComponent(stored);files.push({path:folder+'/attachments/'+stored,bytes:a.content});
@@ -90,19 +105,14 @@ async function prepare(bytes,account,depth=0,viewerDir=''){
    }catch{/* Raw embedded message stays as an ordinary attachment. */}}
   attachmentMeta.push(am);
  }
- const clean=cleanHTML(m.html||'',cids);const body=m.html?clean.html:'<pre>'+esc(m.text||'')+'</pre>';
- const mime={
-   note:'Decoded MIME metadata, not a byte-exact RFC 5322 source or verified signature',
-   headers:m.headers.map(h=>({name:h.key,value:String(h.value??'')})),
-   topLevelType:String(m.headers.find(h=>h.key==='content-type')?.value||'text/plain'),
-   mimeVersion:String(m.headers.find(h=>h.key==='mime-version')?.value||''),
-   transferEncoding:String(m.headers.find(h=>h.key==='content-transfer-encoding')?.value||''),
-   hasText:!!m.text,hasHtml:!!m.html,
-   signatureHeaders:m.headers.filter(h=>/^(dkim-signature|authentication-results|arc-seal|arc-message-signature|arc-authentication-results)$/.test(h.key)).map(h=>({name:h.key,value:String(h.value??'')})),
-   hasSignedMime:/multipart\/signed|application\/(?:pkcs7-mime|x-pkcs7-mime|pgp-signature)/i.test(m.headers.find(h=>h.key==='content-type')?.value||'')
-  };
-  const meta={id,account,path:filepath,folder,fingerprint,messageId,subject:m.subject||'',from:idHeaders.from,to:idHeaders.to,cc:idHeaders.cc,bcc:idHeaders.bcc,date:di.date,day:di.day,rawDate:di.raw,labels:labels(m),attachments:attachmentMeta,bytes:bytes.length,mime,renderVersion:RENDER_VERSION};
- return {meta,files,body,attachments:attachmentMeta,folder,selectedReasons:depth===0?g.ArchiveEML.classify(m,meta.labels):[],text:norm([m.text||'',clean.text].join('\n'))};
+ const clean=cleanHTML(m.html||'',cids);
+  result.body=m.html?clean.html:'<pre>'+esc(m.text||'')+'</pre>';
+  result.files=files;result.meta.attachments=attachmentMeta;result.attachments=attachmentMeta;
+  result.text=norm([m.text||'',clean.text].join('\n'));
+  return result;
+ };
+ if(!lazy)await result.render();
+ return result;
 }
 class Importer{
  constructor(root,{onProgress=()=>{},signal=null,batchSize=50,emlPolicy={},refreshExisting=false}={}){this.emlPolicy=emlPolicy;this.refreshExisting=refreshExisting;this.root=root;this.onProgress=onProgress;this.signal=signal;this.batchSize=batchSize;this.records=new Map();this.pending=[];this.search=[];this.searchBytes=0;this.stats={read:0,new:0,duplicates:0,refreshed:0,emlSaved:0,emlReused:0,errors:0,bytes:0,totalBytes:0,committed:0};this.issues=[];}
@@ -116,7 +126,7 @@ class Importer{
  }
  async run(files,account){accountName(account);await this.lock();try{await this.open();this.stats.totalBytes=files.reduce((s,f)=>s+f.size,0);let base=0;
   for(const file of files){if(this.signal?.aborted)break;try{for await(const raw of mbox(file,{signal:this.signal,onBytes:n=>{this.stats.bytes=base+n;}})){
-   if(this.signal?.aborted)break;this.stats.read++;let p;try{if(raw.error)throw Error(raw.error);p=await prepare(raw.bytes,account,0,this.paths.viewerDir);}catch(e){this.stats.errors++;this.issues.push({file:file.name,offset:raw.offset,end:raw.end,code:['MESSAGE_TOO_LARGE','MALFORMED'].includes(e.message)?e.message:'MIME_ERROR'});this.onProgress({...this.stats});continue;}
+   if(this.signal?.aborted)break;this.stats.read++;let p;try{if(raw.error)throw Error(raw.error);p=await prepare(raw.bytes,account,0,this.paths.viewerDir,{lazy:true});}catch(e){this.stats.errors++;this.issues.push({file:file.name,offset:raw.offset,end:raw.end,code:['MESSAGE_TOO_LARGE','MALFORMED'].includes(e.message)?e.message:'MIME_ERROR'});this.onProgress({...this.stats});continue;}
    const key=account+'/'+p.meta.id,old=this.records.get(key);
    let original=old?.original||null,originalChanged=false;
    // Save and checksum-verify the EML before publishing a reference in HTML/catalog.
@@ -124,7 +134,8 @@ class Importer{
    const wanted=g.ArchiveEML.selectReasons(p.selectedReasons,this.emlPolicy);
    if(wanted.length){
     const alreadyValid=!!original&&await g.ArchiveEML.verify(this.root,old||p.meta,original);
-    const retained=await g.ArchiveEML.preserve(this.root,old||p.meta,raw.bytes,wanted,original);
+    const retained=alreadyValid?{...original,reasons:[...new Set([...(original.reasons||[]),...wanted])]}:
+     await g.ArchiveEML.preserve(this.root,old||p.meta,raw.bytes,wanted,null);
     originalChanged=json(retained)!==json(original);original=retained;
     if(alreadyValid)this.stats.emlReused++;else this.stats.emlSaved++;
    }
@@ -135,14 +146,26 @@ class Importer{
     const needsAppearanceRefresh=this.refreshExisting||old.renderVersion!==RENDER_VERSION;
     if(json(merged)!==json(old.labels)||originalChanged||needsAppearanceRefresh){
      const updated={...old,labels:merged,mime:p.meta.mime||old.mime,renderVersion:RENDER_VERSION,...(original?{original}:{})};
-     // Regenerate only for current-format metadata/label/EML updates; new imports always use latest renderer.
-     const links=new Map();for(const a of p.attachments){const digest=decodeURIComponent(a.href).split('/').pop().slice(0,64);const before=old.attachments.find(b=>b.name===a.name&&decodeURIComponent(b.href).split('/').pop().slice(0,64)===digest);if(before)links.set(a.href,before.href);}
-     const template=document.createElement('template');template.innerHTML=p.body;
-     for(const img of template.content.querySelectorAll('img[src]')){const mapped=links.get(img.getAttribute('src'));if(mapped)img.setAttribute('src',mapped);}
-     await write(this.root,old.path,documentHTML(updated,template.innerHTML,old.attachments,'../'.repeat(old.folder.split('/').length)+this.paths.viewerDir));
+     // Keep the existing body on metadata-only updates; only a version change rerenders HTML.
+     let body;
+     if(!needsAppearanceRefresh){
+      // Only metadata changed: retain the already sanitized and rendered message body.
+      const template=document.createElement('template');template.innerHTML=await read(this.root,old.path);
+      body=template.content.querySelector('main')?.innerHTML;
+     }
+     if(body===undefined){
+      // New/outdated renderer output must be generated; keep existing attachment hrefs.
+      await p.render();
+      const links=new Map();for(const a of p.attachments){const digest=decodeURIComponent(a.href).split('/').pop().slice(0,64);const before=old.attachments.find(b=>b.name===a.name&&decodeURIComponent(b.href).split('/').pop().slice(0,64)===digest);if(before)links.set(a.href,before.href);}
+      const template=document.createElement('template');template.innerHTML=p.body;
+      for(const img of template.content.querySelectorAll('img[src]')){const mapped=links.get(img.getAttribute('src'));if(mapped)img.setAttribute('src',mapped);}
+      body=template.innerHTML;
+     }
+     await write(this.root,old.path,documentHTML(updated,body,old.attachments,'../'.repeat(old.folder.split('/').length)+this.paths.viewerDir));
      this.records.set(key,updated);this.pending.push(updated);if(needsAppearanceRefresh)this.stats.refreshed++;
     }
    }else{
+    await p.render();
     if(original)p.meta.original=original;
     for(const f of p.files)await write(this.root,f.path,f.bytes);
     await write(this.root,p.meta.path,documentHTML(p.meta,p.body,p.attachments,'../'.repeat(p.folder.split('/').length)+this.paths.viewerDir));
