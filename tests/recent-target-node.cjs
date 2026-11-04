@@ -13,7 +13,7 @@ assert(html.indexOf('id="reindex"')>html.indexOf('id="import"'));
 assert(html.indexOf('class="importgrid"')<html.indexOf('id="progressPanel"'),'Import progress must be below the import form');
 assert(html.indexOf('id="progressPanel"')<html.indexOf('id="repairProgressPanel"')&&html.indexOf('id="repairProgressPanel"')<html.indexOf('id="reindex"'),'Import and repair progress must occupy the same area above repair');
 assert(!html.includes('id="previewReaders"')&&!html.includes('reader-upgrade.js'),'Retired reader upgrade must be absent');
-assert(!html.includes('id="refreshExisting"')&&src.includes('refreshExisting:true'),'Reformatting duplicates should be automatic without a checkbox');
+assert(!html.includes('id="refreshExisting"')&&!src.includes('refreshExisting:true'),'Normal reimports must not force rewriting every duplicate');
 assert(html.includes('id="reset" class="quiet"'),'Clear filters button remains present');
 const record={account:'personal',id:'abc123',path:'personal/2025/2025-01/email-abc123.html',subject:'Fictional message',
  from:'sender@example.invalid',to:'reader@example.invalid',cc:'',bcc:'',date:'2025-01-15T12:00:00Z',
