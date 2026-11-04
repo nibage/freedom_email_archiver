@@ -67,7 +67,7 @@ const {cleanHTML,documentHTML,RENDER_VERSION}=g.MailRenderer;
 function extensionSafe(name,type){return /\.(?:html?|xhtml|svg|xml|mhtml?|js|mjs|cjs|hta|exe|com|scr|bat|cmd|ps1|vbs|vbe|wsf|url|lnk|desktop|sh|reg|msi)$/i.test(name)||/^(text\/html|image\/svg\+xml|application\/(?:xhtml\+xml|javascript|xml))$/i.test(type);}
 async function prepare(bytes,account,depth=0,viewerDir='',{lazy=false}={}){
  const decodedBytes=depth===0?g.ArchiveEML.fromMbox(bytes).bytes:bytes;
-  const m=await PostalMime.parse(decodedBytes,{forceRfc822Attachments:true,maxNestingDepth:64,maxHeadersSize:2*1024*1024});
+ const m=await PostalMime.parse(decodedBytes,{forceRfc822Attachments:true,maxNestingDepth:64,maxHeadersSize:2*1024*1024});
  if(!m.headers.length||!m.headers.some(h=>/^(from|date|subject|to|message-id|content-type)$/.test(h.key)))throw Error('MALFORMED');
  const di=dateInfo(m),atts=[];for(const a of m.attachments){atts.push({source:a,hash:await hash(a.content)});}
  const idHeaders={from:addresses(m.from),to:addresses(m.to),cc:addresses(m.cc),bcc:addresses(m.bcc),subject:norm(m.subject),date:di.date||norm(di.raw),replyTo:addresses(m.replyTo),inReplyTo:m.inReplyTo||'',references:m.references||''};
@@ -90,7 +90,7 @@ async function prepare(bytes,account,depth=0,viewerDir='',{lazy=false}={}){
  const result={meta,files:[],body:null,attachments:meta.attachments,folder,selectedReasons:depth===0?g.ArchiveEML.classify(m,meta.labels):[],text:''};
  result.render=async()=>{
   if(result.body!==null)return result;
- const cids={},files=[],attachmentMeta=[];
+   const cids={},files=[],attachmentMeta=[];
  for(let i=0;i<atts.length;i++){
   const {source:a,hash:ah}=atts[i];let name=safeName(a.filename||('attachment-'+(i+1)+(a.mimeType==='message/rfc822'?'.eml':'')));
   const quarantine=extensionSafe(name,a.mimeType);const stored=ah+(/(\.[a-z0-9]{1,12})$/i.exec(name)?.[1].toLowerCase()||'.bin')+(quarantine?'.download':'');const href='attachments/'+encodeURIComponent(stored);files.push({path:folder+'/attachments/'+stored,bytes:a.content});
@@ -146,7 +146,7 @@ class Importer{
     const needsAppearanceRefresh=this.refreshExisting||old.renderVersion!==RENDER_VERSION;
     if(json(merged)!==json(old.labels)||originalChanged||needsAppearanceRefresh){
      const updated={...old,labels:merged,mime:p.meta.mime||old.mime,renderVersion:RENDER_VERSION,...(original?{original}:{})};
-     // Regenerate only for current-format metadata/label/EML updates; new imports always use latest renderer.
+     // Keep the existing body on metadata-only updates; only a version change rerenders HTML.
      let body;
      if(!needsAppearanceRefresh){
       // Only metadata changed: retain the already sanitized and rendered message body.
