@@ -37,7 +37,7 @@ const document={createElement(tag){
   querySelector(selector){if(selector!=='main')return null;const match=/<main>([\s\S]*?)<\/main>/.exec(html);return match?{innerHTML:match[1]}:null;},
   querySelectorAll(){return [];}};}};
 }};
-const context={TextEncoder,TextDecoder,crypto:webcrypto,document,MailRenderer:renderer,
+const context={TextEncoder,TextDecoder,crypto:webcrypto,document,setTimeout,MailRenderer:renderer,
  decodeWords:value=>value,
  PostalMime:{async parse(bytes){
   const source=decoder.decode(bytes),labels=/^X-Gmail-Labels: ([^\r\n]+)/mi.exec(source)?.[1];
