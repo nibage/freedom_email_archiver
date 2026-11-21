@@ -37,25 +37,61 @@ async function evaluate(source,viewerDir){
  const updated=g.MailRenderer.documentHTML({...meta,renderVersion:currentVersion},text.slice(main+6,end),meta.attachments,path);
  return {status:'eligible',html:updated};
 }
-async function refresh(root,{signal,onProgress=()=>{},write=false}={}){
- const lock=write?new C.Importer(root):null;
- if(lock)await lock.lock();
- const stats={scanned:0,total:null,eligible:0,updated:0,current:0,unsupported:0,errors:0,interrupted:false};
- const paths=await C.catalogPaths(root);
+/* The browser's exclusive write lock can be delayed by synced drives or another
+   browser tab. Never leave the UI spinning forever: abort/timeout the wait, and
+   release a lock if the underlying file-system request resolves after cancellation. */
+async function awaitWriteLock(lock,{signal,timeoutMs=30000}={}){
+ if(signal?.aborted)throw Error('AbortError');
+ let timer=null,abort=null;
+ const pending=lock.lock();
+ const stalled=new Promise((_,reject)=>{
+  timer=setTimeout(()=>reject(Error('ARCHIVE_LOCK_TIMEOUT')),timeoutMs);
+  if(signal){
+   abort=()=>reject(Error('AbortError'));
+   signal.addEventListener('abort',abort,{once:true});
+   if(signal.aborted)abort();
+  }
+ });
+ try{await Promise.race([pending,stalled]);}
+ catch(e){
+  // A late successful createWritable must not keep a hidden lock open.
+  void pending.then(async()=>{if(lock.lockWriter){const w=lock.lockWriter;lock.lockWriter=null;await w.close();}}).catch(()=>{});
+  throw e;
+ }finally{
+  clearTimeout(timer);
+  if(signal&&abort)signal.removeEventListener('abort',abort);
+ }
+}
+async function refresh(root,{signal,onProgress=()=>{},write=false,lockTimeoutMs=30000}={}){
+ const stats={phase:write?'counting':'checking',counted:0,scanned:0,total:null,
+  eligible:0,updated:0,current:0,unsupported:0,errors:0,interrupted:false};
  const notify=()=>onProgress({...stats});
+ const lock=write?new C.Importer(root):null;
+ let acquired=false;
+ notify();
  try{
+  // Count directory entries before requesting the exclusive write lock.
+  // No email is opened during counting; a slow synced folder now reports progress.
   if(write){
-   // Count file handles without reading/parsing their HTML. The following pass
-   // validates and rewrites only recognized old reader shells.
-   let total=0;
    for await(const source of g.ArchiveReindex.scan(root)){
     if(signal?.aborted){stats.interrupted=true;notify();return stats;}
-    total++;
-    if(total%250===0)await new Promise(r=>setTimeout(r,0));
+    stats.counted++;
+    if(stats.counted<5||stats.counted%10===0)notify();
+    if(stats.counted%50===0)await new Promise(r=>setTimeout(r,0));
    }
-   stats.total=total;
-   notify();
+   stats.total=stats.counted;
+   if(signal?.aborted){stats.interrupted=true;notify();return stats;}
+   stats.phase='waiting-lock';notify();
+   try{await awaitWriteLock(lock,{signal,timeoutMs:lockTimeoutMs});acquired=true;}
+   catch(e){
+    if(signal?.aborted||e.message==='AbortError'){
+     stats.interrupted=true;stats.phase='stopped';notify();return stats;
+    }
+    throw e;
+   }
   }
+  const paths=await C.catalogPaths(root);
+  stats.phase=write?'updating':'checking';notify();
   for await(const source of g.ArchiveReindex.scan(root)){
    if(signal?.aborted){stats.interrupted=true;break;}
    stats.scanned++;
@@ -73,10 +109,20 @@ async function refresh(root,{signal,onProgress=()=>{},write=false}={}){
     }else if(result.status==='current')stats.current++;
     else stats.unsupported++;
    }catch{stats.errors++;}
-   if(stats.scanned%25===0){notify();await new Promise(r=>setTimeout(r,0));}
+   // Report the first few pages immediately; never leave the counts at zero
+   // until an arbitrary group of 25 has been processed.
+   if(stats.scanned<=5||stats.scanned%10===0){
+    notify();
+    await new Promise(r=>setTimeout(r,0));
+   }
   }
-  notify();return stats;
- }finally{if(lock?.lockWriter)await lock.lockWriter.close();}
+  stats.phase=stats.interrupted?'stopped':'complete';notify();return stats;
+ }finally{
+  if(acquired&&lock?.lockWriter){
+   const writer=lock.lockWriter;lock.lockWriter=null;
+   await writer.close();
+  }
+ }
 }
 g.ArchiveReaderUpgrade={evaluate,refresh};
 })(globalThis);
