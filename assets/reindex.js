@@ -166,7 +166,8 @@ async function syncMissing(root,{signal,onProgress=()=>{},batchSize=100}={}){
    stats.fullRebuild=true;
    // Strict fallback keeps the last good manifest until every HTML page passes validation.
    // The caller already holds the exclusive writer lock.
-   return await rebuild(root,{signal,onProgress:d=>onProgress({...d,fullRebuild:true,skipped:0}),batchSize,lockHeld:true});
+   const rebuilt=await rebuild(root,{signal,onProgress:d=>onProgress({...d,fullRebuild:true,skipped:0}),batchSize,lockHeld:true});
+   return {...rebuilt,fullRebuild:true,skipped:0};
   }
   const seen=new Set(),segments=[],accounts=new Set(old.accounts||[]),batch=[],search=[];
   const token=crypto.randomUUID();
