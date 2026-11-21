@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Freedom Email Archiver">
+  <rect width="64" height="64" rx="15" fill="#562237"/>
+  <rect x="12" y="19" width="40" height="29" rx="5" fill="none" stroke="#FFF7FA" stroke-width="4"/>
+  <path d="M15 24.5 29.6 35.4a4 4 0 0 0 4.8 0L49 24.5" fill="none" stroke="#FFF7FA" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M22 53h20" fill="none" stroke="#D9A3B8" stroke-width="3" stroke-linecap="round"/>
+</svg>
