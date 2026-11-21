@@ -133,3 +133,12 @@ footer{justify-content:flex-end}
  .existing-actions{margin-top:11px}
  .existing-counters{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+/* Root selection only inspects entry files; archive creation is explicit. */
+.root-setup{margin:3px 0 18px;padding:12px 14px;border:1px solid var(--repair-border);
+ border-radius:8px;background:var(--info-bg);line-height:1.5}
+.root-setup p{margin:0 0 8px;font-size:13px}
+.root-setup button{margin:1px 0 8px}
+.root-setup code{background:var(--surface);border:1px solid var(--line);
+ border-radius:4px;padding:1px 4px}
+#rootOpenInfo{color:var(--muted);overflow-wrap:anywhere}
