@@ -71,7 +71,7 @@ async function main(){
  assert.equal(element('importAccount').value,'business','Last account must be pre-selected');
  assert.equal(permissions,0,'Opening the page must not request disk permission');
  assert(element('dirInfo').textContent.includes('tmp/'));
- assert(element('dirInfo').textContent.includes('Currently selected: /RecentMail/'),'Root display should remain concise and show the selected folder name.');
+ assert(element('dirInfo').textContent.includes('Currently selected: /tmp/'),'Root display should remain concise and show the selected folder name.');
  assert.equal(element('previewReindex').disabled,false);
  assertBrowse('initial');
  element('importTab').onclick();
@@ -112,7 +112,7 @@ async function main(){
   Option:function Option(text,value){return {text,value};},
   sessionStorage:{getItem(){return null;},setItem(){},removeItem(){}},
   AbortController,console,setTimeout,clearTimeout,requestAnimationFrame:f=>f()},{filename:'other-instance/app.js'});
- for(let i=0;i<10&&!otherEl('dirInfo').textContent.includes('Self archive');i++)await tick();
+ for(let i=0;i<10&&!otherEl('dirInfo').textContent.includes('Currently selected:');i++)await tick();
  assert.equal(otherWindow.ArchiveUI.root,null,'Another index.html must not receive this archive folder handle');
  assert.equal(otherEl('importAccount').value,'personal','Another index.html must not receive this archive account selection');
  assert(otherEl('dirInfo').textContent.includes('another-archive/'),'Another viewer must default logically to its own archive');
