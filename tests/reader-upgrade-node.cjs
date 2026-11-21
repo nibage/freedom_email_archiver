@@ -35,8 +35,9 @@ const plainSource={account:'personal',folder,id:plainId,path:plainPath,
 const unknownPageC=makePageFor('c'.repeat(64)).replace(currentScript,'alert(1)');
 const pages=new Map([[messagePath,oldPage],[folder+'/email-'+'b'.repeat(64)+'.html',currentPageB],
  [folder+'/email-'+'c'.repeat(64)+'.html',unknownPageC]]);
+let fileOpens=0;
 const files=[...pages.keys()].map(p=>({account:'personal',folder,id:path.basename(p).slice(6,70),path:p,
- handle:{async getFile(){return {size:pages.get(p).length,async text(){return pages.get(p);}}}}}));
+ handle:{async getFile(){fileOpens++;return {size:pages.get(p).length,async text(){return pages.get(p);}}}}}));
 const writes=[];
 const C={
  Importer:class{async lock(){this.lockWriter={close:async()=>{}};}},
@@ -60,9 +61,11 @@ vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEnc
  assert.equal((await globals.ArchiveReaderUpgrade.evaluate(plainSource,'__email_archiver/')).status,'eligible','Recognized old pages without image scripts must also be theme-upgradable');
  const preview=await globals.ArchiveReaderUpgrade.refresh({}, {});
  assert.equal(preview.scanned,3);assert.equal(preview.eligible,1);assert.equal(preview.current,1);assert.equal(preview.unsupported,1);
+ assert.equal(fileOpens,3,'Read-only Check existing should open each saved HTML file once');
  assert.equal(writes.length,0,'Preview must never change saved HTML');
  const updated=await globals.ArchiveReaderUpgrade.refresh({}, {write:true});
  assert.equal(updated.updated,1);assert.deepEqual(writes,[messagePath]);
+ assert.equal(fileOpens,6,'Writing existing pages must use one scan and one file read per page');
  const after=pages.get(messagePath);
  assert.equal(/<main>([\s\S]*?)<\/main>/.exec(after)[1],body,'Original HTML mail body bytes must remain unchanged');
  assert(after.includes('--accent:#6c2943')&&after.includes('--accent:#f5a623'),'Updated shell must support burgundy and orange modes');
