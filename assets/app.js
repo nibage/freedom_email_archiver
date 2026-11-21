@@ -65,7 +65,7 @@ const folderPreference='self-root:'+viewerKey,accountPreference='account:'+viewe
 const viewerParts=decodeURIComponent(viewerKey).split('/').filter(Boolean);
 const selfRootName=viewerParts[nestedViewer?viewerParts.length-3:viewerParts.length-2]||'archive';
 const selfViewerPath=selfRootName+'/'+(nestedViewer?'__email_archiver/':'')+'index.html';
-let recentRoot=null,selectionVersion=0,accountTouched=false,preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null,rootUnsafe=false,rootIsNew=false,rootHasAccounts=false;
+let recentRoot=null,selectionVersion=0,accountTouched=false,preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null,rootUnsafe=false,rootIsNew=false,rootHasAccounts=false,rootAccountsResolved=false;
 function recentDB(){
  return new Promise((resolve,reject)=>{
   let request;try{request=indexedDB.open('offline-email-archiver-folders',1);}catch(e){reject(e);return;}
@@ -120,7 +120,7 @@ async function loadRootAccounts(handle){
   if(handle.name===selfRootName)for(const a of catalog?.accounts||[])try{names.add(C.accountName(a));}catch{}
  }
  if(handle!==root||version!==selectionVersion)return;
- rootHasAccounts=names.size>0;
+ rootHasAccounts=names.size>0;rootAccountsResolved=true;
  const select=$('importAccountSelect'),prior=select.value,sorted=[...names].sort();
  select.replaceChildren(...sorted.map(a=>new Option(a,a)),new Option('+ New account…','__new__'));
  const wanted=accountTouched?prior:preferredAccount;
@@ -160,7 +160,7 @@ async function quickRootCheck(handle){
  $('upgradeReaders').disabled=true;
  $('rootSetup').hidden=false;
  $('rootOpenInfo').hidden=!(rootIsNew||modern||oldKind==='launcher');
- $('createArchive').hidden=!(rootIsNew||(modern&&!legacy));
+ $('createArchive').hidden=!(rootIsNew||(modern&&!legacy)||(oldKind==='launcher'&&!modern));
  $('createArchive').disabled=busy||repairBusy||readerBusy||rootUnsafe;
  if(rootUnsafe){
   $('rootSetupInfo').textContent='This folder already contains an unrelated index.html. Choose another folder; no files have been modified.';
@@ -168,6 +168,9 @@ async function quickRootCheck(handle){
  }else if(rootIsNew){
   $('rootSetupInfo').textContent='No Email Archiver installed in /'+handle.name+'/. Create archive here or Start import will create __email_archiver/ and an index.html launcher in this root folder.';
   $('catalogStatus').textContent='New destination selected. No catalog scan is necessary. Check existing can scan saved account folders if present.';
+ }else if(oldKind==='launcher'&&!modern){
+  $('rootSetupInfo').textContent='A root launcher exists, but its __email_archiver/index.html is missing. Choose Create archive here to restore the application.';
+  $('catalogStatus').textContent='The archive viewer needs to be installed before browsing.';
  }else{
   let count='unknown';
   try{const m=await C.manifest(handle);count=String(m.total);}catch{count='unknown';}
@@ -180,7 +183,7 @@ async function quickRootCheck(handle){
  ready();
 }
 function setRoot(handle,{recent=false}={}){
- root=handle;readerPreview=0;rootUnsafe=false;rootIsNew=false;rootHasAccounts=false;
+ root=handle;readerPreview=0;rootUnsafe=false;rootIsNew=false;rootHasAccounts=false;rootAccountsResolved=false;
  $('rootSetup').hidden=!handle;
  $('createArchive').hidden=true;
  $('rootOpenInfo').hidden=true;
@@ -343,7 +346,7 @@ $('start').onclick=async()=>{
  for(const id of ['retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=true;
  $('stop').hidden=false;ready();notice('');
  try{
-  if(!(rootIsNew&&!rootHasAccounts))await runCatalogSync(target,{signal:controller.signal,force:true});
+  if(!(rootIsNew&&rootAccountsResolved&&!rootHasAccounts))await runCatalogSync(target,{signal:controller.signal,force:true});
   if(controller.signal.aborted)return;
   const existing=await runExistingUpgrade(target,controller.signal,'Updating existing emails before new MBOX import');
   readerPreview=0;
@@ -362,12 +365,18 @@ $('start').onclick=async()=>{
   $('status').textContent='Preparing archive viewer…';
   $('progress').value=0;
   $('progressDetail').textContent='Checking local application files…';
-  await install(target,{onProgress:p=>{
+  const viewerInstallation=await install(target,{onProgress:p=>{
    $('status').textContent='Preparing archive viewer…';
    $('progress').value=p.total?100*p.checked/p.total:0;
    $('progressDetail').textContent=p.checked+' / '+p.total+' viewer files checked · '+
     p.changed+' changed files updated';
   }});
+  if(viewerInstallation.launcherCreated){
+   rootIsNew=false;
+   $('rootSetupInfo').textContent='Archive installed. Open index.html in /'+target.name+'/ to browse the new copy.';
+   $('rootOpenInfo').hidden=false;
+   $('createArchive').hidden=true;
+  }
   if(controller.signal.aborted){
    notice('Import stopped safely before MBOX processing. Existing HTML updates remain saved.');
    return;
