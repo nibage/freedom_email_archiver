@@ -212,14 +212,31 @@ $('chooseDir').onclick=async()=>{
 void loadRecent();
 
 $('files').onchange=()=>{const files=Array.from($('files').files);$('fileInfo').textContent=files.length+' files · '+(files.reduce((s,f)=>s+f.size,0)/1024**3).toFixed(2)+' GiB. Allow at least this space plus a reserve on the destination drive.';ready();};
-async function install(dir){
+async function install(dir,{onProgress=()=>{}}={}){
  const legacy=await C.exists(dir,'index.html'),modern=await C.exists(dir,C.VIEWER_DIR+'index.html');
- if(legacy||modern){const html=await C.read(dir,modern?C.VIEWER_DIR+'index.html':'index.html');if(!html.includes('assets/core.js'))throw Error('NONARCHIVE');}
+ if(legacy||modern){
+  const html=await C.read(dir,modern?C.VIEWER_DIR+'index.html':'index.html');
+  if(!html.includes('assets/core.js'))throw Error('NONARCHIVE');
+ }
  const appDir=legacy&&!modern?'':C.VIEWER_DIR;
- for(const [p,t] of Object.entries(ArchiveBundle))await C.write(dir,appDir+p,t);
- await C.write(dir,appDir+'assets/bundle.js','globalThis.ArchiveBundle='+C.json(ArchiveBundle)+';');
+ const entries=[...Object.entries(ArchiveBundle),
+  ['assets/bundle.js','globalThis.ArchiveBundle='+C.json(ArchiveBundle)+';']];
+ let checked=0,changed=0;
+ // A repeat import should not rewrite the viewer's 16 application assets,
+ // especially when the destination is on a synced virtual drive.
+ for(const [p,t] of entries){
+  const path=appDir+p;
+  let existing=null;
+  try{existing=await C.read(dir,path);}
+  catch(e){if(e.name!=='NotFoundError')throw e;}
+  if(existing!==t){await C.write(dir,path,t);changed++;}
+  checked++;
+  onProgress({checked,total:entries.length,changed});
+ }
  const paths=await C.catalogPaths(dir);
- if(!await C.exists(dir,paths.current)&&!await C.exists(dir,'archive.js')&&!await C.exists(dir,'assets/catalog/archive.js'))await C.write(dir,paths.current,C.wrap(C.empty()));
+ if(!await C.exists(dir,paths.current)&&!await C.exists(dir,'archive.js')&&
+  !await C.exists(dir,'assets/catalog/archive.js'))await C.write(dir,paths.current,C.wrap(C.empty()));
+ return {checked,changed};
 }
 function progress(s){$('progress').value=s.totalBytes?Math.min(100,100*s.bytes/s.totalBytes):0;for(const [id,k] of [['readCount','read'],['newCount','new'],['dupeCount','duplicates'],['refreshedCount','refreshed'],['emlSavedCount','emlSaved'],['emlReusedCount','emlReused'],['errorCount','errors']])$(id).textContent=s[k].toLocaleString('en-GB');$('progressDetail').textContent=(s.bytes/1024**2).toFixed(1)+' / '+(s.totalBytes/1024**2).toFixed(1)+' MiB read · '+s.committed+' changes committed to the catalog';}
 $('start').onclick=async()=>{
@@ -232,13 +249,12 @@ $('start').onclick=async()=>{
  try{await allowRoot(target);}catch(e){showError(e);return;}
  preferredAccount=acc;void rememberAccount(acc);
  busy=true;controller=new AbortController();
- $('progressPanel').hidden=true;$('existingProgressPanel').hidden=false;
+ $('progressPanel').hidden=true;$('existingProgressPanel').hidden=true;
  $('chooseDir').disabled=true;$('previewReaders').disabled=true;$('upgradeReaders').disabled=true;
  $('files').disabled=true;$('importAccount').disabled=true;$('importAccountSelect').disabled=true;
  for(const id of ['retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=true;
  $('stop').hidden=false;ready();notice('');
  try{
-  await install(target);
   const existing=await runExistingUpgrade(target,controller.signal,'Updating existing emails before new MBOX import');
   readerPreview=0;
   if(existing.interrupted||controller.signal.aborted){
@@ -247,6 +263,19 @@ $('start').onclick=async()=>{
   }
   if(existing.errors){
    notice(existing.errors+' saved HTML page(s) could not be updated. MBOX import was not started. Check your backup and repeat the operation.');
+   return;
+  }
+  if(controller.signal.aborted)return;
+  // Refresh only missing/changed application assets. Keep the saved HTML update
+  // stage visible and show viewer-preparation progress instead of a frozen 0%.
+  $('existingProgressDetail').textContent+=' Preparing application files…';
+  await install(target,{onProgress:p=>{
+   $('existingProgressTitle').textContent='Preparing archive viewer for MBOX import';
+   $('existingProgressDetail').textContent='Viewer files checked: '+p.checked+' / '+p.total+
+    ' · '+p.changed+' files updated. The existing HTML update has finished.';
+  }});
+  if(controller.signal.aborted){
+   notice('Import stopped safely before MBOX processing. Existing HTML updates remain saved.');
    return;
   }
   // This stage always comes after the existing-only HTML pass, even if no older pages exist.
