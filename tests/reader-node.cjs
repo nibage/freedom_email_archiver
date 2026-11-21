@@ -35,10 +35,12 @@ function simulate(query,length=2){
  const handlers={};let removed=false,wentBack=false,prevented=false;
  const button={addEventListener:(ev,cb)=>handlers['load-'+ev]=cb,remove:()=>removed=true};
  const back={addEventListener:(ev,cb)=>handlers['back-'+ev]=cb};
+ let appliedTheme=null;
  const document={getElementById:id=>id==='loadRemoteImages'?button:id==='backToArchive'?back:null,
+  documentElement:{setAttribute(k,v){if(k==='data-theme')appliedTheme=v;}},
   querySelectorAll:()=>[img]};
  vm.runInNewContext(script,{location:{search:query},URLSearchParams,document,history:{length,back:()=>wentBack=true}});
- return {attrs,handlers,clicked:()=>{handlers['load-click']?.();},back:()=>{handlers['back-click']?.({preventDefault(){prevented=true;}});return {wentBack,prevented};},get removed(){return removed;}};
+ return {attrs,handlers,clicked:()=>{handlers['load-click']?.();},back:()=>{handlers['back-click']?.({preventDefault(){prevented=true;}});return {wentBack,prevented};},get removed(){return removed;},get theme(){return appliedTheme;}};
 }
 const automatic=simulate('?fromArchive=1&images=auto');
 assert.equal(automatic.attrs.get('src'),'https://example.invalid/pixel');
@@ -50,6 +52,15 @@ assert.equal(manual.attrs.has('src'),false,'Manual mode must not initiate remote
 assert.equal(manual.attrs.has('data-remote-src'),true);
 manual.clicked();
 assert.equal(manual.attrs.get('src'),'https://example.invalid/pixel');
+const themedDark=simulate('?fromArchive=1&images=manual&theme=dark');
+const themedLight=simulate('?fromArchive=1&images=manual&theme=light');
+assert.equal(themedDark.theme,'dark','Dark viewer must theme standalone message shell.');
+assert.equal(themedLight.theme,'light','Light viewer must theme standalone message shell.');
+assert.equal(themedDark.attrs.has('src'),false,'Theme changes must not trigger remote image loads.');
+const generated=fs.readFileSync(path.join(root,'assets/mail-renderer.js'),'utf8');
+assert(generated.includes('RENDER_VERSION=2'),'New standalone page appearance requires a renderer version bump.');
+assert(generated.includes('--accent:#6c2943')&&generated.includes('--accent:#f5a623'),'Standalone Back link must use burgundy/amber rather than the old green.');
+assert(generated.includes('background:#fff;color:#182c3b'),'Sender HTML should retain its light reading surface.');
 const direct=simulate('',1);
 assert.equal(direct.attrs.has('src'),false,'Opening standalone HTML directly must remain remote-blocked.');
 assert.deepEqual(direct.back(),{wentBack:false,prevented:false});
@@ -58,4 +69,5 @@ console.log('PASS: CSP inline-script SHA-256 matches exactly');
 console.log('PASS: auto mode loads only from an explicit viewer URL');
 console.log('PASS: manual/direct mode blocks until button click');
 console.log('PASS: Back uses history for viewer links, falls back for direct pages');
+console.log('PASS: message shell follows the viewer theme while email content remains separate');
 
