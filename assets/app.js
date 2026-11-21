@@ -258,32 +258,71 @@ $('chooseDir').onclick=async()=>{
 void loadRecent();
 
 $('files').onchange=()=>{const files=Array.from($('files').files);$('fileInfo').textContent=files.length+' files · '+(files.reduce((s,f)=>s+f.size,0)/1024**3).toFixed(2)+' GiB. Allow at least this space plus a reserve on the destination drive.';ready();};
+const rootLauncherHTML='<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
+ '<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; style-src &#39;unsafe-inline&#39;">'+
+ '<meta http-equiv="refresh" content="0; url=__email_archiver/index.html"><title>Open Email Archive</title>'+
+ '<style>body{font:16px system-ui,sans-serif;max-width:560px;margin:10vh auto;padding:24px;color:#292d35}a{color:#6c2943}</style></head>'+
+ '<body><main><!-- FREEDOM-ARCHIVE-LAUNCHER --><h1>Email Archive</h1><p>'+
+ 'Open your portable archive: <a href="__email_archiver/index.html">Open Email Archive</a>.</p>'+
+ '<p>This launcher and the archive folder can be moved together.</p></main></body></html>';
 async function install(dir,{onProgress=()=>{}}={}){
  const legacy=await C.exists(dir,'index.html'),modern=await C.exists(dir,C.VIEWER_DIR+'index.html');
- if(legacy||modern){
-  const html=await C.read(dir,modern?C.VIEWER_DIR+'index.html':'index.html');
-  if(!html.includes('assets/core.js'))throw Error('NONARCHIVE');
+ let kind='none';
+ if(legacy){
+  const html=await C.read(dir,'index.html');
+  kind=html.includes('assets/core.js')?'archive':
+   html.includes('FREEDOM-ARCHIVE-LAUNCHER')?'launcher':'unrelated';
+  if(kind==='unrelated')throw Error('NONARCHIVE');
  }
- const appDir=legacy&&!modern?'':C.VIEWER_DIR;
+ const appDir=modern||kind!=='archive'?C.VIEWER_DIR:'';
  const entries=[...Object.entries(ArchiveBundle),
   ['assets/bundle.js','globalThis.ArchiveBundle='+C.json(ArchiveBundle)+';\n']];
  let checked=0,changed=0;
- // A repeat import should not rewrite the viewer's 16 application assets,
- // especially when the destination is on a synced virtual drive.
+ // New roots are created directly. Repeat imports compare files and do not
+ // rewrite identical assets (less synced-drive I/O and Defender activity).
  for(const [p,t] of entries){
-  const path=appDir+p;
-  let existing=null;
-  try{existing=await C.read(dir,path);}
-  catch(e){if(e.name!=='NotFoundError')throw e;}
-  if(existing!==t){await C.write(dir,path,t);changed++;}
+  const filePath=appDir+p;
+  let previous=null;
+  if(modern||kind==='archive'){
+   try{previous=await C.read(dir,filePath);}
+   catch(e){if(e.name!=='NotFoundError')throw e;}
+  }
+  if(previous!==t){await C.write(dir,filePath,t);changed++;}
   checked++;
-  onProgress({checked,total:entries.length,changed});
+  onProgress({checked,total:entries.length+(!legacy?1:0),changed});
+ }
+ let launcherCreated=false;
+ if(!legacy){
+  await C.write(dir,'index.html',rootLauncherHTML);
+  launcherCreated=true;changed++;
+  checked++;
+  onProgress({checked,total:entries.length+1,changed});
  }
  const paths=await C.catalogPaths(dir);
  if(!await C.exists(dir,paths.current)&&!await C.exists(dir,'archive.js')&&
   !await C.exists(dir,'assets/catalog/archive.js'))await C.write(dir,paths.current,C.wrap(C.empty()));
- return {checked,changed};
+ return {checked,changed,launcherCreated,viewerDir:paths.viewerDir};
 }
+$('createArchive').onclick=async()=>{
+ if(!root||rootUnsafe||busy||repairBusy||readerBusy)return;
+ const target=root;
+ try{await allowRoot(target);}catch(e){showError(e);return;}
+ busy=true;$('createArchive').disabled=true;
+ $('rootSetupInfo').textContent='Creating the portable archive in /'+target.name+'/…';
+ try{
+  const out=await install(target,{onProgress:p=>{
+   $('rootSetupInfo').textContent='Preparing archive: '+p.checked+' / '+p.total+' application files · '+p.changed+' saved.';
+  }});
+  $('rootSetupInfo').textContent='Archive ready in /'+target.name+'/. Open index.html from that folder; it links to __email_archiver/index.html.';
+  $('rootOpenInfo').hidden=false;
+  $('createArchive').hidden=true;
+  rootIsNew=false;
+  $('catalogStatus').textContent='Archive installed. Choose Check existing to inspect any saved emails or catalog entries.';
+  notice('Created portable Email Archive in /'+target.name+'/ (root index.html and __email_archiver/index.html). Open the selected folder in File Explorer to launch it.');
+  void loadRootAccounts(target);
+ }catch(e){$('rootSetupInfo').textContent='Archive creation failed: '+errorText(e);showError(e);}
+ finally{busy=false;$('createArchive').disabled=false;ready();}
+};
 function progress(s){$('progress').value=s.totalBytes?Math.min(100,100*s.bytes/s.totalBytes):0;for(const [id,k] of [['readCount','read'],['newCount','new'],['dupeCount','duplicates'],['refreshedCount','refreshed'],['emlSavedCount','emlSaved'],['emlReusedCount','emlReused'],['errorCount','errors']])$(id).textContent=s[k].toLocaleString('en-GB');$('progressDetail').textContent=(s.bytes/1024**2).toFixed(1)+' / '+(s.totalBytes/1024**2).toFixed(1)+' MiB read · '+s.committed+' changes committed to the catalog';}
 $('start').onclick=async()=>{
  if(busy||repairBusy||readerBusy)return;
