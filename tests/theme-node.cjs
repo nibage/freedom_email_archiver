@@ -9,6 +9,10 @@ const css=fs.readFileSync(path.join(root,'assets/style.css'),'utf8');
 const guide=fs.readFileSync(path.join(root,'GUIDE.html'),'utf8');
 assert(index.includes('id="themeToggle"')&&index.includes('data-theme-label'));
 assert(guide.includes('id="themeToggle"')&&guide.includes('assets/theme.js'));
+assert(index.includes('id="appFavicon"')&&index.includes('assets/favicon-light.svg'));
+assert(guide.includes('id="appFavicon"')&&guide.includes('assets/favicon-light.svg'));
+assert(index.includes("img-src 'self' file:"),'App CSP should permit local SVG icons but no remote images.');
+assert(guide.includes("img-src 'self' file:"),'Guide CSP should permit the local SVG favicon.');
 assert(index.indexOf('assets/theme.js')<index.indexOf('assets/style.css'),'Theme must initialize before CSS paints.');
 assert(index.includes("script-src 'self' file:"),'CSP must allow the local theme script.');
 assert(guide.includes("script-src 'self' file:"),'Guide must allow the local theme script.');
@@ -36,7 +40,7 @@ for(const key of htmlVariables){
 function scenario(initial,blocked=false){
  const current=new Map(initial?[['email-archiver-theme',initial]]:[]);
  const handlers={};let mode=null,storageWrites=0;
- const label={textContent:''},icon={textContent:''};
+ const label={textContent:''},icon={textContent:''},favicon={href:'',setAttribute(k,v){if(k==='href')this.href=v;}};
  const button={
   attrs:{},title:'',
   setAttribute(k,v){this.attrs[k]=v;},
@@ -46,7 +50,7 @@ function scenario(initial,blocked=false){
  const document={
   readyState:'loading',
   documentElement:{setAttribute(k,v){if(k==='data-theme')mode=v;}},
-  getElementById(id){return id==='themeToggle'?button:null;},
+  getElementById(id){return id==='themeToggle'?button:id==='appFavicon'?favicon:null;},
   addEventListener(name,fn){handlers[name]=fn;}
  };
  const localStorage={
@@ -56,26 +60,31 @@ function scenario(initial,blocked=false){
  vm.runInNewContext(src,{document,localStorage},{filename:'assets/theme.js'});
  const first=mode;
  handlers.DOMContentLoaded();
- return {get mode(){return mode;},first,button,icon,label,storageWrites:()=>storageWrites,stored:()=>current.get('email-archiver-theme'),click:()=>handlers.click()};
+ return {get mode(){return mode;},first,button,icon,label,favicon,storageWrites:()=>storageWrites,stored:()=>current.get('email-archiver-theme'),click:()=>handlers.click()};
 }
 const first=scenario();
 assert.equal(first.first,'light');
+assert.equal(first.favicon.href,'assets/favicon-light.svg');
 assert.equal(first.label.textContent,'Dark mode');
 assert.equal(first.button.attrs['aria-pressed'],'false');
 first.click();
 assert.equal(first.mode,'dark');
+assert.equal(first.favicon.href,'assets/favicon-dark.svg');
 assert.equal(first.stored(),'dark');
 assert.equal(first.label.textContent,'Light mode');
 assert.equal(first.button.attrs['aria-label'],'Switch to light mode');
 assert.equal(first.button.attrs['aria-pressed'],'true');
 const remembered=scenario(first.stored());
 assert.equal(remembered.first,'dark','Previously selected theme must load immediately.');
+assert.equal(remembered.favicon.href,'assets/favicon-dark.svg');
 remembered.click();
 assert.equal(remembered.stored(),'light');
+assert.equal(remembered.favicon.href,'assets/favicon-light.svg');
 assert.equal(remembered.button.attrs['aria-pressed'],'false');
 const noStorage=scenario(null,true);
 noStorage.click();
 assert.equal(noStorage.mode,'dark','Switch must work even with localStorage disabled.');
+assert.equal(noStorage.favicon.href,'assets/favicon-dark.svg');
 assert.equal(noStorage.storageWrites(),0);
 console.log('PASS: brick light and orange dark semantic palette tokens and native controls');
 console.log('PASS: theme initializes before CSS, switches with accessible labels, and persists');
