@@ -40,10 +40,22 @@ async function evaluate(source,viewerDir){
 async function refresh(root,{signal,onProgress=()=>{},write=false}={}){
  const lock=write?new C.Importer(root):null;
  if(lock)await lock.lock();
- const stats={scanned:0,eligible:0,updated:0,current:0,unsupported:0,errors:0,interrupted:false};
+ const stats={scanned:0,total:null,eligible:0,updated:0,current:0,unsupported:0,errors:0,interrupted:false};
  const paths=await C.catalogPaths(root);
  const notify=()=>onProgress({...stats});
  try{
+  if(write){
+   // Count file handles without reading/parsing their HTML. The following pass
+   // validates and rewrites only recognized old reader shells.
+   let total=0;
+   for await(const source of g.ArchiveReindex.scan(root)){
+    if(signal?.aborted){stats.interrupted=true;notify();return stats;}
+    total++;
+    if(total%250===0)await new Promise(r=>setTimeout(r,0));
+   }
+   stats.total=total;
+   notify();
+  }
   for await(const source of g.ArchiveReindex.scan(root)){
    if(signal?.aborted){stats.interrupted=true;break;}
    stats.scanned++;

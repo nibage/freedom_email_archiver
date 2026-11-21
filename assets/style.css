@@ -109,3 +109,27 @@ footer{justify-content:flex-end}
 #import .activity-area{max-width:860px;margin-left:auto;margin-right:auto}
 #import #repairProgressPanel{border-top:3px solid var(--repair-border)}
 #import #stopReindex{margin-top:12px}
+
+/* Start/import actions share a row; old-email actions stay right aligned. */
+.import-actions{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-top:18px}
+.import-main-action,.existing-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.existing-actions{margin-left:auto}
+.existing-actions button{white-space:nowrap}
+.import-feedback{border-top:1px solid var(--line);padding-top:12px;margin-top:15px}
+.import-feedback p{font-size:12px;line-height:1.55;margin:5px 0;overflow-wrap:anywhere}
+.import-feedback #catalogStatus{color:var(--muted)}
+.import-feedback #readerStatus{color:var(--ink)}
+.import-feedback #stopReindex{margin:8px 0}
+.existing-counters{grid-template-columns:repeat(4,minmax(0,1fr))}
+#existingProgressPanel{border-top:3px solid var(--repair-border)}
+#existingProgressPanel #stopReaders{margin-top:6px}
+@media(max-width:760px){
+ .import-actions{align-items:stretch}
+ .existing-actions{justify-content:flex-end;max-width:100%;margin-left:0}
+ .existing-actions button{white-space:normal}
+}
+@media(max-width:460px){
+ .import-actions{display:block}
+ .existing-actions{margin-top:11px}
+ .existing-counters{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
