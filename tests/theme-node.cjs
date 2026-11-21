@@ -7,6 +7,17 @@ const src=fs.readFileSync(path.join(root,'assets/theme.js'),'utf8');
 const index=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const css=fs.readFileSync(path.join(root,'assets/style.css'),'utf8');
 const guide=fs.readFileSync(path.join(root,'GUIDE.html'),'utf8');
+const lightIcon=fs.readFileSync(path.join(root,'assets/favicon-light.svg'),'utf8');
+const darkIcon=fs.readFileSync(path.join(root,'assets/favicon-dark.svg'),'utf8');
+for(const svg of [lightIcon,darkIcon]){
+ assert(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"'),'Favicon must be a local SVG.');
+ assert(svg.includes('viewBox="0 0 64 64"'),'Icon must have scalable square proportions.');
+ assert(svg.includes('<rect')&&svg.includes('<path'),'Icon should contain a recognizable envelope.');
+ assert(!/<(?:script|image|foreignObject)\b/i.test(svg),'No active content or linked images in favicons.');
+ assert(!/\b(?:href|src)=/i.test(svg),'Favicons must be self-contained.');
+}
+assert(lightIcon.includes('fill="#562237"'),'Light favicon should use the wine palette.');
+assert(darkIcon.includes('fill="#17191E"')&&darkIcon.includes('stroke="#F5A623"'),'Dark favicon should use charcoal and orange.');
 assert(index.includes('id="themeToggle"')&&index.includes('data-theme-label'));
 assert(guide.includes('id="themeToggle"')&&guide.includes('assets/theme.js'));
 assert(index.includes('id="appFavicon"')&&index.includes('assets/favicon-light.svg'));
@@ -89,3 +100,4 @@ assert.equal(noStorage.storageWrites(),0);
 console.log('PASS: brick light and orange dark semantic palette tokens and native controls');
 console.log('PASS: theme initializes before CSS, switches with accessible labels, and persists');
 console.log('PASS: offline guide shares theme; storage restrictions do not break the toggle');
+console.log('PASS: both SVG favicons are local, self-contained, and match their themes');
