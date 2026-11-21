@@ -75,8 +75,8 @@ async function main(){
  assert.equal(scanned[0],b);
  assert.equal(window.ArchiveUI.root,b);
  assert.equal(lastPicker.startIn,a);
- assert.equal(el('repairProgressPanel').hidden,false,'Catalog progress appears on unified import page');
- assert.match(el('repairProgressDetail').textContent,/Added 1 missing catalog entries/);
+ assert(!html.includes('id="repairProgressPanel"'),'Catalog has no separate progress card.');
+ assert.match(el('catalogStatus').textContent,/Added 1 missing catalog entries/,'Catalog result appears inline under import actions.');
  assert.equal(el('importAccountSelect').value,'work');
  el('importAccountSelect').value='__new__';
  el('importAccountSelect').listeners.change();
