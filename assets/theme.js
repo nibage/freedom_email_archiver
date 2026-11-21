@@ -9,6 +9,9 @@
  }catch{/* Some file:// contexts restrict local storage. */}
  function apply(mode){
   document.documentElement.setAttribute('data-theme',mode);
+  // Favicon is an ordinary local SVG; no network, canvas, or dynamic blob URL.
+  const favicon=document.getElementById('appFavicon');
+  if(favicon)favicon.setAttribute('href',mode==='dark'?'assets/favicon-dark.svg':'assets/favicon-light.svg');
   const button=document.getElementById('themeToggle');
   if(!button)return;
   const dark=mode==='dark';

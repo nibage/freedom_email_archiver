@@ -36,6 +36,10 @@ The single-column centered Import workspace selects the archive root before the 
 
 ## Light and dark interface themes
 
+Each theme includes a **matching SVG favicon**: a small envelope on a burgundy background in light mode, and an orange envelope on charcoal in dark mode. The favicon changes when you switch the theme and is stored entirely in the portable archive at `assets/favicon-light.svg` and `assets/favicon-dark.svg`. Both are included in new archive installations. When updating an older archive by copying UI assets, copy both icon files along with `index.html`, `assets/theme.js`, `GUIDE.html` and the updated `assets/bundle.js` (without replacing catalogs or existing email pages).
+
+
+
 Use the **Dark mode / Light mode** switch in the top-right header of the offline archive. Light mode uses a muted deep-burgundy and soft-grey palette; dark mode uses charcoal panels and an amber/orange accent. The selected mode is kept in the browser's local storage when available, so opening the same archive again retains your choice. If the browser disables local storage, the switch still works for the currently open page. The offline Guide follows the same setting.
 
 The viewer, Guide, and **outer shell of newly generated standalone email pages** follow the light/dark theme, including the Back link. The email body itself remains on a neutral white reading surface to preserve the original sender styling. Links opened from Browse carry an explicit `?theme=dark|light` preference; a directly opened page can also read the saved local theme when browser storage allows. **Existing email HTML pages won't gain the new shell merely by replacing application files.** Their headers/scripts are saved inside each message, so they must be regenerated from the original MBOX (the renderer version is incremented for future reimports). No email attachments or catalogs are modified by using the theme toggle.
