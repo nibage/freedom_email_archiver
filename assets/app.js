@@ -266,13 +266,17 @@ $('start').onclick=async()=>{
    return;
   }
   if(controller.signal.aborted)return;
-  // Refresh only missing/changed application assets. Keep the saved HTML update
-  // stage visible and show viewer-preparation progress instead of a frozen 0%.
-  $('existingProgressDetail').textContent+=' Preparing application files…';
+  // Keep the existing-email results intact. The MBOX panel reports any viewer
+  // setup work, then resets to display MBOX bytes/progress.
+  $('progressPanel').hidden=false;
+  $('status').textContent='Preparing archive viewer…';
+  $('progress').value=0;
+  $('progressDetail').textContent='Checking local application files…';
   await install(target,{onProgress:p=>{
-   $('existingProgressTitle').textContent='Preparing archive viewer for MBOX import';
-   $('existingProgressDetail').textContent='Viewer files checked: '+p.checked+' / '+p.total+
-    ' · '+p.changed+' files updated. The existing HTML update has finished.';
+   $('status').textContent='Preparing archive viewer…';
+   $('progress').value=p.total?100*p.checked/p.total:0;
+   $('progressDetail').textContent=p.checked+' / '+p.total+' viewer files checked · '+
+    p.changed+' changed files updated';
   }});
   if(controller.signal.aborted){
    notice('Import stopped safely before MBOX processing. Existing HTML updates remain saved.');
@@ -384,6 +388,9 @@ function showExistingProgress(s){
   detail='Counting saved HTML files: '+s.counted+' found. No email content has been opened yet.';
  }else if(s.phase==='waiting-lock'){
   detail=s.total+' HTML files found. Waiting for exclusive archive write access; close other archive tabs if this takes too long.';
+ }else if(s.phase==='writing'){
+  detail='Saving a verified saved-email page · '+s.scanned+' / '+s.total+
+   ' checked · '+s.updated+' updated so far…';
  }else{
   detail=total===null
    ?s.scanned+' saved HTML messages checked…'
