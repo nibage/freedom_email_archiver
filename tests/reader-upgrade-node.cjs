@@ -73,6 +73,8 @@ vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEnc
  assert.equal(writes.length,1,'Cancelled operation must not write another email');
  // A synced drive may leave createWritable({mode:'exclusive'}) unresolved.
  // The updater must stop cleanly with a useful error and close late locks.
+ // Restore one verified old reader so the lazy lock is actually needed.
+ pages.set(messagePath,oldPage);
  const OriginalImporter=C.Importer;
  let unlock,lateCloseCount=0,updates=[];
  C.Importer=class{
@@ -86,8 +88,8 @@ vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEnc
    ()=>globals.ArchiveReaderUpgrade.refresh({},{
     write:true,lockTimeoutMs:20,onProgress:x=>updates.push(x)
    }),e=>e.message==='ARCHIVE_LOCK_TIMEOUT');
-  assert(updates.some(x=>x.phase==='counting'&&x.counted>=1),
-   'Counting progress should be visible before waiting for the writer lock');
+  assert(updates.some(x=>x.phase==='reading'&&x.scanned>=1),
+   'Single-pass reading progress must appear before waiting for a writer lock');
   assert(updates.some(x=>x.phase==='waiting-lock'),
    'The UI must distinguish lock wait from a frozen HTML scan');
   unlock();await new Promise(resolve=>setTimeout(resolve,0));
@@ -102,6 +104,13 @@ vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEnc
   assert.equal(cancelledLock.interrupted,true,'Cancel must work during a pending lock');
   unlock();await new Promise(resolve=>setTimeout(resolve,0));
   assert.equal(lateCloseCount,2,'A late lock after cancellation must also close');
+  // If every saved page is already current, don't create archive.lock at all.
+  pages.set(messagePath,after);
+  let unnecessary=0;
+  C.Importer=class{async lock(){unnecessary++;throw Error('should not lock');}};
+  const unchanged=await globals.ArchiveReaderUpgrade.refresh({}, {write:true});
+  assert.equal(unchanged.updated,0);
+  assert.equal(unnecessary,0,'A no-change run should not open any write lock or trigger Defender writes');
  }finally{C.Importer=OriginalImporter;}
 
  console.log('PASS: old email navigation shell updated without MBOX, body unchanged');
