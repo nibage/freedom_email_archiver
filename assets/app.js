@@ -58,14 +58,14 @@ function tab(which){
 }
 $('browseTab').onclick=()=>tab('browse');
 $('importTab').onclick=()=>tab('import');
-function ready(){$('start').disabled=busy||repairBusy||readerBusy||rootUnsafe||!root||!$('files').files.length;}
+function ready(){$('start').disabled=busy||repairBusy||readerBusy||rootUnsafe||rootProbing||!root||!$('files').files.length;}
 // Each opened index.html has its own remembered root/account. No global "last" folder.
 const viewerKey=location.pathname;
 const folderPreference='self-root:'+viewerKey,accountPreference='account:'+viewerKey;
 const viewerParts=decodeURIComponent(viewerKey).split('/').filter(Boolean);
 const selfRootName=viewerParts[nestedViewer?viewerParts.length-3:viewerParts.length-2]||'archive';
 const selfViewerPath=selfRootName+'/'+(nestedViewer?'__email_archiver/':'')+'index.html';
-let recentRoot=null,selectionVersion=0,accountTouched=false,preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null,rootUnsafe=false,rootIsNew=false,rootHasAccounts=false,rootAccountsResolved=false;
+let recentRoot=null,selectionVersion=0,accountTouched=false,preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null,rootUnsafe=false,rootIsNew=false,rootHasAccounts=false,rootAccountsResolved=false,rootProbing=false;
 function recentDB(){
  return new Promise((resolve,reject)=>{
   let request;try{request=indexedDB.open('offline-email-archiver-folders',1);}catch(e){reject(e);return;}
@@ -154,7 +154,7 @@ async function quickRootCheck(handle){
    page.includes('FREEDOM-ARCHIVE-LAUNCHER')?'launcher':'unrelated';
  }
  if(handle!==root||version!==selectionVersion)return;
- rootUnsafe=oldKind==='unrelated';
+ rootUnsafe=oldKind==='unrelated';rootProbing=false;
  rootIsNew=!modern&&!legacy;
  $('previewReaders').disabled=rootUnsafe||busy||repairBusy||readerBusy;
  $('upgradeReaders').disabled=true;
@@ -183,7 +183,7 @@ async function quickRootCheck(handle){
  ready();
 }
 function setRoot(handle,{recent=false}={}){
- root=handle;readerPreview=0;rootUnsafe=false;rootIsNew=false;rootHasAccounts=false;rootAccountsResolved=false;
+ root=handle;readerPreview=0;rootUnsafe=false;rootIsNew=false;rootHasAccounts=false;rootAccountsResolved=false;rootProbing=!!handle;
  $('rootSetup').hidden=!handle;
  $('createArchive').hidden=true;
  $('rootOpenInfo').hidden=true;
@@ -197,7 +197,7 @@ function setRoot(handle,{recent=false}={}){
  if(handle){
   void quickRootCheck(handle).catch(e=>{
    if(handle!==root)return;
-   rootUnsafe=true;
+   rootUnsafe=true;rootProbing=false;
    $('rootSetup').hidden=false;
    $('rootSetupInfo').textContent='Could not inspect this folder: '+errorText(e)+'. No files were changed.';
    $('catalogStatus').textContent='Unable to verify archive entry files.';
@@ -310,7 +310,7 @@ async function install(dir,{onProgress=()=>{}}={}){
  return {checked,changed,launcherCreated,viewerDir:paths.viewerDir};
 }
 $('createArchive').onclick=async()=>{
- if(!root||rootUnsafe||busy||repairBusy||readerBusy)return;
+ if(!root||rootUnsafe||rootProbing||busy||repairBusy||readerBusy)return;
  const target=root;
  try{await allowRoot(target);}catch(e){showError(e);return;}
  busy=true;$('createArchive').disabled=true;
@@ -335,7 +335,7 @@ $('start').onclick=async()=>{
  let acc;
  try{acc=selectedAccount();}catch(e){showError(e);return;}
  const target=root,sourceFiles=Array.from($('files').files);
- if(!target||rootUnsafe||!sourceFiles.length)return;
+ if(!target||rootUnsafe||rootProbing||!sourceFiles.length)return;
  // Permissions remain strictly user-gesture based; this button authorizes the pre-import update.
  try{await allowRoot(target);}catch(e){showError(e);return;}
  preferredAccount=acc;void rememberAccount(acc);
@@ -529,7 +529,7 @@ async function runExistingUpgrade(target,signal,title){
  }finally{$('stopReaders').hidden=true;}
 }
 $('previewReaders').onclick=async()=>{
- if(!root||rootUnsafe||busy||repairBusy||readerBusy)return;
+ if(!root||rootUnsafe||rootProbing||busy||repairBusy||readerBusy)return;
  const target=root;
  try{await allowRoot(target,'read');}catch(e){showError(e);return;}
  readerBusy=true;readerPreview=0;readerController=new AbortController();
@@ -565,7 +565,7 @@ $('previewReaders').onclick=async()=>{
  finally{readerBusy=false;$('stopCheck').hidden=true;readerControls(false);}
 };
 $('upgradeReaders').onclick=async()=>{
- if(!root||rootUnsafe||!readerPreview||busy||repairBusy||readerBusy)return;
+ if(!root||rootUnsafe||rootProbing||!readerPreview||busy||repairBusy||readerBusy)return;
  const target=root;
  try{await allowRoot(target);}catch(e){showError(e);return;}
  readerBusy=true;readerController=new AbortController();readerControls(true);
