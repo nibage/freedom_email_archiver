@@ -22,6 +22,7 @@ const a={name:'tmp',kind:'directory',async queryPermission(){return 'prompt';},
  b={name:'OtherMail',kind:'directory',async queryPermission(){return 'granted';},
  async *entries(){yield ['work',{kind:'directory'}];yield ['another',{kind:'directory'}];}};
 let prompts=0,pickNext=b,lastPicker=null,scanned=[],lastAction;
+const stages=[];
 a.requestPermission=async()=>{prompts++;return 'granted';};
 const selfRootKey='self-root:/tmp/__email_archiver/index.html',selfAccountKey='account:/tmp/__email_archiver/index.html';
 const saved=new Map([[selfRootKey,a],[selfAccountKey,'work'],['last',b],['lastAccount','foreign']]);
@@ -42,14 +43,22 @@ const C={VIEWER_DIR:'__email_archiver/',MANIFEST:'__email_archiver/assets/catalo
  PREVIOUS:'__email_archiver/assets/catalog/archive.previous.js',VERSION:1,
  accountName(s){if(!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(s))throw Error('ACCOUNT');return s;},
  async manifest(root){return {...viewerManifest,total:root===a?83:22,accounts:root===a?['personal','work']:['work','another']};},
- async catalogPaths(){return {viewerDir:'__email_archiver/'};},
- async exists(root,p){return p==='__email_archiver/index.html'||p==='index.html';},
- async read(){throw Error('Browse must not read through import target');},fold:s=>String(s||'').toLowerCase()};
+ async catalogPaths(){return {viewerDir:'__email_archiver/',current:'__email_archiver/assets/catalog/archive.js'};},
+ async exists(root,p){return p==='__email_archiver/index.html'||p==='index.html'||p==='__email_archiver/assets/catalog/archive.js';},
+ async read(root,p){if(p.endsWith('index.html'))return '<script src="assets/core.js"></script>';throw Error('Browse must not read through import target');},
+ async write(){},json:JSON.stringify,empty(){return viewerManifest;},
+ Importer:class{async run(files,account){stages.push('mbox:'+account);return {interrupted:false,issues:[]};}},
+ fold:s=>String(s||'').toLowerCase()};
 const ArchiveReindex={async syncMissing(root,{onProgress}){
  scanned.push(root);onProgress({scanned:7,skipped:6,indexed:1});
  return {scanned:7,skipped:6,indexed:1,committed:true,interrupted:false};
 }};
-vm.runInNewContext(src,{window,document,indexedDB,ArchiveCore:C,ArchiveReindex,ArchiveBundle:{},
+const ArchiveReaderUpgrade={async refresh(root,{write=false,onProgress=()=>{}}){
+ stages.push(write?'existing-update':'existing-check');
+ const data={scanned:4,total:write?4:null,eligible:1,updated:write?1:0,current:3,unsupported:0,errors:0,interrupted:false};
+ onProgress(data);return data;
+}};
+vm.runInNewContext(src,{window,document,indexedDB,ArchiveCore:C,ArchiveReindex,ArchiveReaderUpgrade,ArchiveBundle:{},
  location:{pathname:'/tmp/__email_archiver/index.html'},showDirectoryPicker:window.showDirectoryPicker,
  Option:function Option(text,value){return {text,value};},sessionStorage:{getItem(){return null;},setItem(){},removeItem(){}},
  AbortController,console,setTimeout,clearTimeout,requestAnimationFrame:f=>f()},{filename:'assets/app.js'});
@@ -84,6 +93,22 @@ async function main(){
  el('importAccount').value='project';
  el('importAccount').listeners.change();
  assert.equal(el('importAccount').value,'project');
+ // Check existing stays in the action row and puts its result just underneath.
+ await el('previewReaders').onclick();
+ assert.match(el('readerStatus').textContent,/4 HTML messages checked · 1 older viewers eligible/);
+ assert.equal(el('existingProgressPanel').hidden,true,'Read-only check must not open the write-progress panel');
+ await el('upgradeReaders').onclick();
+ assert.match(el('existingProgressTitle').textContent,/Existing-email update complete/);
+ assert.equal(el('existingProgress').value,4,'Existing update progress must reach its real file count');
+ assert.equal(el('existingUpdated').textContent,'1');
+ // A new MBOX import must refresh existing pages BEFORE the importer sees the MBOX.
+ stages.length=0;
+ el('importAccountSelect').value='work';el('importAccountSelect').listeners.change();
+ el('files').files=[{name:'fictional.mbox',size:1024}];el('files').onchange();
+ await el('start').onclick();
+ assert.deepEqual(stages,['existing-update','mbox:work'],'Existing HTML update must run before MBOX import');
+ assert.equal(el('existingProgressPanel').hidden,false,'Existing result remains visible after new import begins');
+ assert.equal(el('progressPanel').hidden,false,'New MBOX has its own progress panel');
  assertLink();
  assert.equal(saved.get(selfRootKey),a,'Other folder must not replace self preference');
  assert.equal(saved.get('last'),b,'Ignore the global last folder from another archive');
