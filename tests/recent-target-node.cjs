@@ -36,7 +36,7 @@ const db={close(){},transaction(store,mode){const tx={objectStore(){return {
  get(key){const req={};queueMicrotask(()=>{req.result=stored.get(key);req.onsuccess?.();});return req;},
  put(value,key){stored.set(key,value);queueMicrotask(()=>tx.oncomplete?.());}};}};return tx;}};
 const indexedDB={open(){idbOpen++;const request={result:db};queueMicrotask(()=>request.onsuccess?.());return request;}};
-const document={getElementById:element,createElement(tag){return node(tag);},
+const document={getElementById:element,documentElement:{getAttribute(name){return name==='data-theme'?'light':null;}},createElement(tag){return node(tag);},
  head:{append(script){const name=String(script.src).split('?')[0];const data=name.endsWith('/assets/catalog/archive.js')?viewerManifest:
  name.endsWith('/personal/catalog/one.js')?{kind:'metadata',records:[record]}:null;
  queueMicrotask(()=>{if(data){window.MailArchive.receive(data);script.onload?.();}else script.onerror?.();});}}};
@@ -103,7 +103,7 @@ async function main(){
  const otherElements=new Map();
  const otherEl=id=>{if(!otherElements.has(id))otherElements.set(id,node('div',id));return otherElements.get(id);};
  const otherWindow={showDirectoryPicker:window.showDirectoryPicker,addEventListener(){}};
- const otherDocument={getElementById:otherEl,createElement(tag){return node(tag);},
+ const otherDocument={getElementById:otherEl,documentElement:{getAttribute(name){return name==='data-theme'?'light':null;}},createElement(tag){return node(tag);},
   head:{append(script){const name=String(script.src).split('?')[0];const response=name.endsWith('/assets/catalog/archive.js')?viewerManifest:
     name.endsWith('/personal/catalog/one.js')?{kind:'metadata',records:[record]}:null;
    queueMicrotask(()=>{if(response){otherWindow.MailArchive.receive(response);script.onload?.();}else script.onerror?.();});}}};
