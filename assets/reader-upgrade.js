@@ -11,9 +11,10 @@ const knownHashes=new Set([
 async function evaluate(source,viewerDir){
  const text=await (await source.handle.getFile()).text();
  if(!text.startsWith('<!doctype html><html lang="en">')||!text.includes('id="mail-archive-record"'))return {status:'unsupported'};
- const active=[...text.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)];
+ const active=[...text.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)]
+  .filter(m=>!/\btype\s*=\s*["']application\/json["']/i.test(m[1]));
  if(active.length!==1)return {status:'unsupported'};
- const script=active[0][1],hashBytes=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(script)));
+ const script=active[0][2],hashBytes=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(script)));
  const hash=btoa(String.fromCharCode(...hashBytes));
  if(!knownHashes.has(hash)||!text.includes('script-src &#39;sha256-'+hash+'&#39;'))return {status:'unsupported'};
  const main=text.indexOf('<main>'),end=text.indexOf('</main>',main+6);
