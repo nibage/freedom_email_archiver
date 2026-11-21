@@ -58,14 +58,14 @@ function tab(which){
 }
 $('browseTab').onclick=()=>tab('browse');
 $('importTab').onclick=()=>tab('import');
-function ready(){$('start').disabled=busy||repairBusy||readerBusy||!root||!$('files').files.length;}
+function ready(){$('start').disabled=busy||repairBusy||readerBusy||rootUnsafe||!root||!$('files').files.length;}
 // Each opened index.html has its own remembered root/account. No global "last" folder.
 const viewerKey=location.pathname;
 const folderPreference='self-root:'+viewerKey,accountPreference='account:'+viewerKey;
 const viewerParts=decodeURIComponent(viewerKey).split('/').filter(Boolean);
 const selfRootName=viewerParts[nestedViewer?viewerParts.length-3:viewerParts.length-2]||'archive';
 const selfViewerPath=selfRootName+'/'+(nestedViewer?'__email_archiver/':'')+'index.html';
-let recentRoot=null,selectionVersion=0,accountTouched=false,preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null;
+let recentRoot=null,selectionVersion=0,accountTouched=false,preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null,rootUnsafe=false,rootIsNew=false;
 function recentDB(){
  return new Promise((resolve,reject)=>{
   let request;try{request=indexedDB.open('offline-email-archiver-folders',1);}catch(e){reject(e);return;}
@@ -142,16 +142,63 @@ async function updateRootInfo(handle){
  $('dirInfo').textContent='Currently selected: '+name;
 
 }
+async function quickRootCheck(handle){
+ const version=selectionVersion;
+ const modern=await C.exists(handle,C.VIEWER_DIR+'index.html');
+ const legacy=await C.exists(handle,'index.html');
+ let oldKind='none';
+ if(legacy){
+  const page=await C.read(handle,'index.html');
+  oldKind=page.includes('assets/core.js')?'archive':
+   page.includes('FREEDOM-ARCHIVE-LAUNCHER')?'launcher':'unrelated';
+ }
+ if(handle!==root||version!==selectionVersion)return;
+ rootUnsafe=oldKind==='unrelated';
+ rootIsNew=!modern&&!legacy;
+ $('rootSetup').hidden=false;
+ $('rootOpenInfo').hidden=!(rootIsNew||modern||oldKind==='launcher');
+ $('createArchive').hidden=!(rootIsNew||(modern&&!legacy));
+ $('createArchive').disabled=busy||repairBusy||readerBusy||rootUnsafe;
+ if(rootUnsafe){
+  $('rootSetupInfo').textContent='This folder already contains an unrelated index.html. Choose another folder; no files have been modified.';
+  $('catalogStatus').textContent='Archive selection rejected. Existing files will not be overwritten.';
+ }else if(rootIsNew){
+  $('rootSetupInfo').textContent='No Email Archiver installed in /'+handle.name+'/. Create archive here or Start import will create __email_archiver/ and an index.html launcher in this root folder.';
+  $('catalogStatus').textContent='New destination selected. No catalog scan is necessary. Check existing can scan saved account folders if present.';
+ }else{
+  let count='unknown';
+  try{const m=await C.manifest(handle);count=String(m.total);}catch{count='unknown';}
+  if(handle!==root||version!==selectionVersion)return;
+  $('rootSetupInfo').textContent=modern
+   ?'Email Archiver found in /'+handle.name+'/. Check existing to verify saved HTML and catalog entries.'
+   :'Existing root-level archive found. It will be extended without replacing its index.html.';
+  $('catalogStatus').textContent='Archive selected · '+count+' messages indexed. Choose Check existing for a deeper inspection.';
+ }
+ ready();
+}
 function setRoot(handle,{recent=false}={}){
- root=handle;readerPreview=0;
- $('catalogStatus').textContent=handle?'Archive selected. Checking saved catalogs after folder selection…':'Choose an archive root to check saved catalog entries.';
+ root=handle;readerPreview=0;rootUnsafe=false;rootIsNew=false;
+ $('rootSetup').hidden=!handle;
+ $('createArchive').hidden=true;
+ $('rootOpenInfo').hidden=true;
+ $('rootSetupInfo').textContent=handle?'Checking archive entry files…':'';
+ $('catalogStatus').textContent=handle?'Checking archive entry files (no catalog scan)…':'Choose an archive root to check saved catalog entries.';
  $('existingProgressPanel').hidden=true;
  $('previewReaders').disabled=!handle||busy||repairBusy||readerBusy;
  $('upgradeReaders').disabled=true;
  $('readerStatus').textContent='Back up the archive before updating saved message pages.';
  void updateRootInfo(handle,{recent});
- if(handle)void loadRootAccounts(handle);
- else $('accountInfo').textContent='Choose an archive root to load existing accounts.';
+ if(handle){
+  void quickRootCheck(handle).catch(e=>{
+   if(handle!==root)return;
+   rootUnsafe=true;
+   $('rootSetup').hidden=false;
+   $('rootSetupInfo').textContent='Could not inspect this folder: '+errorText(e)+'. No files were changed.';
+   $('catalogStatus').textContent='Unable to verify archive entry files.';
+   ready();
+  });
+  void loadRootAccounts(handle);
+ }else $('accountInfo').textContent='Choose an archive root to load existing accounts.';
  ready();
 }
 async function loadRecent(){
@@ -194,7 +241,7 @@ async function allowRoot(handle){
 }
 function pickRoot(){
  if(!window.showDirectoryPicker)throw Error('BROWSER');
- const options={mode:'readwrite',id:'mailarchive'};
+ const options={mode:'read',id:'mailarchive'};
  if(recentRoot)options.startIn=recentRoot;
  return showDirectoryPicker(options);
 }
@@ -206,7 +253,6 @@ $('chooseDir').onclick=async()=>{
   selectionVersion++;
   setRoot(chosen);
   void rememberRecent(chosen);
-  await runCatalogSync(chosen);
  }catch(e){if(e.name!=='AbortError')showError(e);}
 };
 void loadRecent();
