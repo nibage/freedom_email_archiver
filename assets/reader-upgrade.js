@@ -123,7 +123,11 @@ async function refresh(root,{signal,onProgress=()=>{},write=false,lockTimeoutMs=
     }else if(result.status==='current')stats.current++;
     else stats.unsupported++;
    }catch(e){
-    if(e.message==='ARCHIVE_LOCK_TIMEOUT')throw e;
+    // Permission/Defender or writer-lock failures are not per-message format
+    // errors. Stop immediately rather than retrying a blocked write for every
+    // email (which can trigger repeated Windows security notifications).
+    if(e.message==='ARCHIVE_LOCK_TIMEOUT'||e.message==='LOCKED'||
+       stats.phase==='writing'||stats.phase==='waiting-lock')throw e;
     stats.errors++;
    }
    if(stats.scanned<=5||stats.scanned%10===0){
