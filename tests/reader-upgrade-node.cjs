@@ -55,7 +55,7 @@ globals.ArchiveReindex={
  }
 };
 const upgrader=fs.readFileSync(path.join(rootDir,'assets/reader-upgrade.js'),'utf8');
-vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEncoder,btoa:bytes=>Buffer.from(bytes,'binary').toString('base64'),setTimeout},{filename:'assets/reader-upgrade.js'});
+vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEncoder,btoa:bytes=>Buffer.from(bytes,'binary').toString('base64'),setTimeout,clearTimeout},{filename:'assets/reader-upgrade.js'});
 (async()=>{
  assert.equal((await globals.ArchiveReaderUpgrade.evaluate(plainSource,'__email_archiver/')).status,'eligible','Recognized old pages without image scripts must also be theme-upgradable');
  const preview=await globals.ArchiveReaderUpgrade.refresh({}, {});
