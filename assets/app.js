@@ -220,7 +220,7 @@ async function install(dir,{onProgress=()=>{}}={}){
  }
  const appDir=legacy&&!modern?'':C.VIEWER_DIR;
  const entries=[...Object.entries(ArchiveBundle),
-  ['assets/bundle.js','globalThis.ArchiveBundle='+C.json(ArchiveBundle)+';']];
+  ['assets/bundle.js','globalThis.ArchiveBundle='+C.json(ArchiveBundle)+';\n']];
  let checked=0,changed=0;
  // A repeat import should not rewrite the viewer's 16 application assets,
  // especially when the destination is on a synced virtual drive.
@@ -311,7 +311,7 @@ $('stop').onclick=()=>{
  if(!$('progressPanel').hidden)$('status').textContent='Stopping after the current message and committing the catalog…';
  else $('existingProgressTitle').textContent='Stopping existing-email updates…';
 };
-function errorText(e){const msgs={APP_SUBFOLDER:'Choose the parent archive root, not its __email_archiver application subfolder.',RECENT_ACCESS:'Archive folder access is not available. Click Import folder root to select it again, then retry.',LOCKED:'Another import or catalog repair may already be writing to this folder. Close other archive tabs and retry.',ACCOUNT:'Enter a valid account folder name, such as personal.',BROWSER:'Import requires a current desktop Chrome or Edge with the File System Access API.',CATALOG:'The catalog could not be loaded. Check the folder is complete and retry importing from your backup.',FORMAT:'Unsupported or damaged catalog format.',NONARCHIVE:'The selected folder contains another index.html. Choose an empty folder or an archive created by this tool.',OLD_ARCHIVE_FORMAT:'This is an older archive layout. For testing, choose a new empty archive root and reimport the original MBOX. No automatic migration is performed.'};return msgs[e.message]||('Operation failed ('+e.name+'). Check permissions, free space and whether another tab is writing to the archive.');}
+function errorText(e){const msgs={ARCHIVE_LOCK_TIMEOUT:'Could not acquire the archive write lock. Close other archive tabs, check syncing, and retry.',APP_SUBFOLDER:'Choose the parent archive root, not its __email_archiver application subfolder.',RECENT_ACCESS:'Archive folder access is not available. Click Import folder root to select it again, then retry.',LOCKED:'Another import or catalog repair may already be writing to this folder. Close other archive tabs and retry.',ACCOUNT:'Enter a valid account folder name, such as personal.',BROWSER:'Import requires a current desktop Chrome or Edge with the File System Access API.',CATALOG:'The catalog could not be loaded. Check the folder is complete and retry importing from your backup.',FORMAT:'Unsupported or damaged catalog format.',NONARCHIVE:'The selected folder contains another index.html. Choose an empty folder or an archive created by this tool.',OLD_ARCHIVE_FORMAT:'This is an older archive layout. For testing, choose a new empty archive root and reimport the original MBOX. No automatic migration is performed.'};return msgs[e.message]||('Operation failed ('+e.name+'). Check permissions, free space and whether another tab is writing to the archive.');}
 function showError(e){notice(errorText(e));}
 function showBrowseError(e){browseNotice(errorText(e));}
 
@@ -379,9 +379,18 @@ function showExistingProgress(s){
  $('existingUpdated').textContent=String(s.updated);
  $('existingSkipped').textContent=String(s.current+s.unsupported);
  $('existingErrors').textContent=String(s.errors);
- $('existingProgressDetail').textContent=total===null
-  ?'Counting saved HTML files to calculate progress…'
-  :s.scanned+' / '+total+' HTML files checked · '+s.eligible+' older pages eligible · '+s.updated+' updated · '+(s.current+s.unsupported)+' skipped · '+s.errors+' errors';
+ let detail;
+ if(s.phase==='counting'){
+  detail='Counting saved HTML files: '+s.counted+' found. No email content has been opened yet.';
+ }else if(s.phase==='waiting-lock'){
+  detail=s.total+' HTML files found. Waiting for exclusive archive write access; close other archive tabs if this takes too long.';
+ }else{
+  detail=total===null
+   ?s.scanned+' saved HTML messages checked…'
+   :s.scanned+' / '+total+' HTML files checked · '+s.eligible+' older pages eligible · '+
+    s.updated+' updated · '+(s.current+s.unsupported)+' skipped · '+s.errors+' errors';
+ }
+ $('existingProgressDetail').textContent=detail;
 }
 async function runExistingUpgrade(target,signal,title){
  $('existingProgressPanel').hidden=false;
@@ -404,7 +413,11 @@ async function runExistingUpgrade(target,signal,title){
   return result;
  }catch(e){
   $('existingProgressTitle').textContent='Existing-email update failed';
-  $('existingProgressDetail').textContent='Check file permissions, available space and your archive backup.';
+  $('existingProgressDetail').textContent=e.message==='ARCHIVE_LOCK_TIMEOUT'
+   ?'Could not acquire the archive write lock. Close other archive tabs and check the sync drive, then try again.'
+   :e.message==='LOCKED'
+    ?'Another tab is writing to this archive. Close it and retry.'
+    :'Existing-email update failed ('+(e.message||e.name||'unknown error')+'). Check permissions, disk space and your backup.';
   throw e;
  }finally{$('stopReaders').hidden=true;}
 }
