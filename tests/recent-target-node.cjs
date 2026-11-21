@@ -134,7 +134,8 @@ async function main(){
  assert.equal(created.size,writeCount,'Selecting a new folder cannot write application files');
  assert.equal(el('createArchive').hidden,false,'A new destination reveals Create archive here');
  assert.match(el('rootSetupInfo').textContent,/No Email Archiver installed/);
- assert.match(el('rootOpenInfo').textContent,/index.html/);
+ assert.equal(el('rootOpenInfo').hidden,false,'Opening instructions should be visible for a new archive');
+ assert(html.includes('id="rootOpenInfo"')&&html.includes('double-click <code>index.html</code>'),'HTML contains the actual launcher instructions.');
  // An explicit Create action builds the nested viewer and root launcher.
  bundle['index.html']='<script src="assets/core.js"></script>';
  await el('createArchive').onclick();
