@@ -8,8 +8,8 @@ const knownHashes=new Set([
  'plh17SbUCiDkNbQcdgw9tWwZBAWhfuVQuyH4/S9O9WM=',
  '7t/H/h9ZP4XQdAlrAQ/zqlDHz4FGcNes/FoUt9JHOoM='
 ]);
-async function evaluate(source,viewerDir){
- const text=await (await source.handle.getFile()).text();
+async function evaluate(source,viewerDir,providedText){
+ const text=typeof providedText==='string'?providedText:await (await source.handle.getFile()).text();
  if(!text.startsWith('<!doctype html><html lang="en">')||!text.includes('id="mail-archive-record"'))return {status:'unsupported'};
  const active=[...text.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)]
   .filter(m=>!/\btype\s*=\s*["']application\/json["']/i.test(m[1]));
@@ -26,6 +26,20 @@ async function evaluate(source,viewerDir){
  }
  const main=text.indexOf('<main>'),end=text.indexOf('</main>',main+6);
  if(main<0||end<0||text.indexOf('<main>',main+1)!==-1)return {status:'unsupported'};
+ // A modern page with a known signed script and current shell needs no rewriting.
+ // Its embedded record is checked directly, avoiding costly DOM parsing on every
+ // already-current email in a large archive.
+ if(hash==='7t/H/h9ZP4XQdAlrAQ/zqlDHz4FGcNes/FoUt9JHOoM='&&text.includes('--accent:#6c2943')){
+  const metadata=/<script id="mail-archive-record" type="application\/json">([\s\S]*?)<\/script>/.exec(text);
+  if(metadata){
+   try{
+    const embedded=JSON.parse(metadata[1]),r=embedded.record;
+    if(embedded.schema===1&&r?.id===source.id&&r?.account===source.account&&
+       r?.folder===source.folder&&r?.path===source.path&&
+       Number(r.renderVersion)>=currentVersion)return {status:'current'};
+   }catch{/* Validate the full record below or skip the page. */}
+  }
+ }
  const parsed=g.ArchiveReindex.fromHtml(text,source);
  if(parsed.legacy)return {status:'unsupported'};
  const meta=parsed.record;
@@ -63,48 +77,44 @@ async function awaitWriteLock(lock,{signal,timeoutMs=30000}={}){
  }
 }
 async function refresh(root,{signal,onProgress=()=>{},write=false,lockTimeoutMs=30000}={}){
- const stats={phase:write?'counting':'checking',counted:0,scanned:0,total:null,
+ const stats={phase:'preparing',counted:0,scanned:0,total:null,
   eligible:0,updated:0,current:0,unsupported:0,errors:0,interrupted:false};
  const notify=()=>onProgress({...stats});
  const lock=write?new C.Importer(root):null;
  let acquired=false;
  notify();
  try{
-  // Count directory entries before requesting the exclusive write lock.
-  // No email is opened during counting; a slow synced folder now reports progress.
-  if(write){
-   for await(const source of g.ArchiveReindex.scan(root)){
-    if(signal?.aborted){stats.interrupted=true;notify();return stats;}
-    stats.counted++;
-    if(stats.counted<5||stats.counted%10===0)notify();
-    if(stats.counted%50===0)await new Promise(r=>setTimeout(r,0));
-   }
-   stats.total=stats.counted;
-   if(signal?.aborted){stats.interrupted=true;notify();return stats;}
-   stats.phase='waiting-lock';notify();
-   try{await awaitWriteLock(lock,{signal,timeoutMs:lockTimeoutMs});acquired=true;}
-   catch(e){
-    if(signal?.aborted||e.message==='AbortError'){
-     stats.interrupted=true;stats.phase='stopped';notify();return stats;
-    }
-    throw e;
-   }
-  }
+  // A catalog count is only an estimate; one directory traversal is enough.
+  // No initial full enumeration, duplicate getFile() call or antivirus-triggering
+  // write lock is needed when every saved HTML page is already current.
   const paths=await C.catalogPaths(root);
-  stats.phase=write?'updating':'checking';notify();
+  try{
+   const m=await C.manifest(root);
+   if(Number.isSafeInteger(m.total)&&m.total>0)stats.total=m.total;
+  }catch{/* Missing catalog: scan remains valid with an indeterminate total. */}
+  stats.phase='reading';notify();
   for await(const source of g.ArchiveReindex.scan(root)){
    if(signal?.aborted){stats.interrupted=true;break;}
-   stats.scanned++;
-   stats.phase='reading';
+   stats.scanned++;stats.counted=stats.scanned;
    if(stats.scanned<=5||stats.scanned%10===0)notify();
    try{
     const file=await source.handle.getFile();
     if(file.size>128*1024*1024){stats.unsupported++;continue;}
-    const result=await evaluate(source,paths.viewerDir);
+    const result=await evaluate(source,paths.viewerDir,await file.text());
     if(result.status==='eligible'){
      stats.eligible++;
      if(write){
       if(signal?.aborted){stats.interrupted=true;break;}
+      if(!acquired){
+       stats.phase='waiting-lock';notify();
+       try{await awaitWriteLock(lock,{signal,timeoutMs:lockTimeoutMs});acquired=true;}
+       catch(e){
+        if(signal?.aborted||e.message==='AbortError'){
+         stats.interrupted=true;stats.phase='stopped';notify();return stats;
+        }
+        throw e;
+       }
+      }
       stats.phase='writing';notify();
       await C.write(root,source.path,result.html);
       stats.updated++;
@@ -112,15 +122,17 @@ async function refresh(root,{signal,onProgress=()=>{},write=false,lockTimeoutMs=
      }
     }else if(result.status==='current')stats.current++;
     else stats.unsupported++;
-   }catch{stats.errors++;}
-   // Report the first few pages immediately; never leave the counts at zero
-   // until an arbitrary group of 25 has been processed.
+   }catch(e){
+    if(e.message==='ARCHIVE_LOCK_TIMEOUT')throw e;
+    stats.errors++;
+   }
    if(stats.scanned<=5||stats.scanned%10===0){
-    notify();
-    await new Promise(r=>setTimeout(r,0));
+    notify();await new Promise(r=>setTimeout(r,0));
    }
   }
-  stats.phase=stats.interrupted?'stopped':'complete';notify();return stats;
+  stats.phase=stats.interrupted?'stopped':'complete';
+  if(!stats.interrupted)stats.total=stats.scanned;
+  notify();return stats;
  }finally{
   if(acquired&&lock?.lockWriter){
    const writer=lock.lockWriter;lock.lockWriter=null;
