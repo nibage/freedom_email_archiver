@@ -55,7 +55,7 @@ globals.ArchiveReindex={
  }
 };
 const upgrader=fs.readFileSync(path.join(rootDir,'assets/reader-upgrade.js'),'utf8');
-vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEncoder,btoa:bytes=>Buffer.from(bytes,'binary').toString('base64'),setTimeout},{filename:'assets/reader-upgrade.js'});
+vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEncoder,btoa:bytes=>Buffer.from(bytes,'binary').toString('base64'),setTimeout,clearTimeout},{filename:'assets/reader-upgrade.js'});
 (async()=>{
  assert.equal((await globals.ArchiveReaderUpgrade.evaluate(plainSource,'__email_archiver/')).status,'eligible','Recognized old pages without image scripts must also be theme-upgradable');
  const preview=await globals.ArchiveReaderUpgrade.refresh({}, {});
@@ -71,6 +71,40 @@ vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEnc
  const stopped=new AbortController();stopped.abort();
  assert.equal((await globals.ArchiveReaderUpgrade.refresh({},{signal:stopped.signal,write:true})).interrupted,true);
  assert.equal(writes.length,1,'Cancelled operation must not write another email');
+ // A synced drive may leave createWritable({mode:'exclusive'}) unresolved.
+ // The updater must stop cleanly with a useful error and close late locks.
+ const OriginalImporter=C.Importer;
+ let unlock,lateCloseCount=0,updates=[];
+ C.Importer=class{
+  async lock(){await new Promise(resolve=>{unlock=()=>{
+   this.lockWriter={close:async()=>{lateCloseCount++;}};
+   resolve();
+  };});}
+ };
+ try{
+  await assert.rejects(
+   ()=>globals.ArchiveReaderUpgrade.refresh({},{
+    write:true,lockTimeoutMs:20,onProgress:x=>updates.push(x)
+   }),e=>e.message==='ARCHIVE_LOCK_TIMEOUT');
+  assert(updates.some(x=>x.phase==='counting'&&x.counted>=1),
+   'Counting progress should be visible before waiting for the writer lock');
+  assert(updates.some(x=>x.phase==='waiting-lock'),
+   'The UI must distinguish lock wait from a frozen HTML scan');
+  unlock();await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(lateCloseCount,1,'A late successful lock must be released after timeout');
+  const stopped=new AbortController();
+  const aborting=globals.ArchiveReaderUpgrade.refresh({},{
+   write:true,signal:stopped.signal,lockTimeoutMs:1000
+  });
+  await new Promise(resolve=>setTimeout(resolve,0));
+  stopped.abort();
+  const cancelledLock=await aborting;
+  assert.equal(cancelledLock.interrupted,true,'Cancel must work during a pending lock');
+  unlock();await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(lateCloseCount,2,'A late lock after cancellation must also close');
+ }finally{C.Importer=OriginalImporter;}
+
  console.log('PASS: old email navigation shell updated without MBOX, body unchanged');
  console.log('PASS: current emails and unknown scripts skipped, preview read-only, cancellation safe');
+ console.log('PASS: timed-out and cancelled exclusive locks report progress and close late writers');
 })().catch(e=>{console.error(e);process.exitCode=1;});

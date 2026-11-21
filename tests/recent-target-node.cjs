@@ -45,8 +45,10 @@ const C={VIEWER_DIR:'__email_archiver/',MANIFEST:'__email_archiver/assets/catalo
  async manifest(root){return {...viewerManifest,total:root===a?83:22,accounts:root===a?['personal','work']:['work','another']};},
  async catalogPaths(){return {viewerDir:'__email_archiver/',current:'__email_archiver/assets/catalog/archive.js'};},
  async exists(root,p){return p==='__email_archiver/index.html'||p==='index.html'||p==='__email_archiver/assets/catalog/archive.js';},
- async read(root,p){if(p.endsWith('index.html'))return '<script src="assets/core.js"></script>';throw Error('Browse must not read through import target');},
- async write(){},json:JSON.stringify,empty(){return viewerManifest;},
+ async read(root,p){if(p.endsWith('index.html'))return '<script src="assets/core.js"></script>';
+  if(p.endsWith('assets/bundle.js'))return 'globalThis.ArchiveBundle={};\n';
+  throw Error('Browse must not read through import target');},
+ async write(root,p){stages.push('viewer-install:'+p);},json:JSON.stringify,empty(){return viewerManifest;},
  Importer:class{async run(files,account){stages.push('mbox:'+account);return {interrupted:false,issues:[]};}},
  fold:s=>String(s||'').toLowerCase()};
 const ArchiveReindex={async syncMissing(root,{onProgress}){
@@ -106,7 +108,10 @@ async function main(){
  el('importAccountSelect').value='work';el('importAccountSelect').listeners.change();
  el('files').files=[{name:'fictional.mbox',size:1024}];el('files').onchange();
  await el('start').onclick();
- assert.deepEqual(stages,['existing-update','mbox:work'],'Existing HTML update must run before MBOX import');
+ assert.equal(stages[0],'existing-update','Existing HTML refresh must run first');
+ assert(stages.indexOf('mbox:work')>0,'The MBOX importer must run after existing HTML refresh');
+ assert.equal(stages.filter(x=>x.startsWith('viewer-install:')).length,0,
+  'Unchanged viewer files should never be rewritten on repeat import');
  assert.equal(el('existingProgressPanel').hidden,false,'Existing result remains visible after new import begins');
  assert.equal(el('progressPanel').hidden,false,'New MBOX has its own progress panel');
  assertLink();
