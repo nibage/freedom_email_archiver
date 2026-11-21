@@ -36,7 +36,7 @@ async function readCatalog(){
   try{const result=await load(src+'?g='+Date.now());if(result?.format!==C.VERSION)throw Error('FORMAT');catalog=result;break;}catch(e){last=e;}
  }
  if(!catalog)throw last||Error('CATALOG');
- records.clear();cache.clear();for(const seg of catalog.segments){const m=await load(seg.meta);for(const r of m.records)records.set(r.account+'/'+r.id,r);}all=[...records.values()].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||a.id.localeCompare(b.id));options('accountFilter',catalog.accounts,'All accounts');options('labelFilter',[...new Set(all.flatMap(r=>r.labels))].sort(),'All labels');$('accounts').replaceChildren(...catalog.accounts.map(a=>new Option(a)));
+ records.clear();cache.clear();for(const seg of catalog.segments){const m=await load(seg.meta);for(const r of m.records)records.set(r.account+'/'+r.id,r);}all=[...records.values()].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||a.id.localeCompare(b.id));options('accountFilter',catalog.accounts,'All accounts');options('labelFilter',[...new Set(all.flatMap(r=>r.labels))].sort(),'All labels');if(root)void loadRootAccounts(root);
  if(remembered&&remembered.values&&Number.isFinite(remembered.when)&&Date.now()-remembered.when<=30*60*1000){
   for(const [id,value] of Object.entries(remembered.values)){
    if(['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter','pageSize'].includes(id)&&typeof value==='string')$(id).value=value;
@@ -58,14 +58,14 @@ function tab(which){
 }
 $('browseTab').onclick=()=>tab('browse');
 $('importTab').onclick=()=>tab('import');
-function ready(){$('start').disabled=busy||repairBusy||!root||!$('files').files.length;}
+function ready(){$('start').disabled=busy||repairBusy||readerBusy||!root||!$('files').files.length;}
 // Each opened index.html has its own remembered root/account. No global "last" folder.
 const viewerKey=location.pathname;
 const folderPreference='self-root:'+viewerKey,accountPreference='account:'+viewerKey;
 const viewerParts=decodeURIComponent(viewerKey).split('/').filter(Boolean);
 const selfRootName=viewerParts[nestedViewer?viewerParts.length-3:viewerParts.length-2]||'archive';
 const selfViewerPath=selfRootName+'/'+(nestedViewer?'__email_archiver/':'')+'index.html';
-let recentRoot=null,selectionVersion=0,accountTouched=false;
+let recentRoot=null,selectionVersion=0,accountTouched=false,preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null;
 function recentDB(){
  return new Promise((resolve,reject)=>{
   let request;try{request=indexedDB.open('offline-email-archiver-folders',1);}catch(e){reject(e);return;}
@@ -94,8 +94,41 @@ async function rememberAccount(value){
  }catch{/* Browser profile storage may be disabled for local files. */}
  finally{db?.close();}
 }
+function selectedAccount(){
+ return C.accountName(($('importAccountSelect').value==='__new__' ? $('importAccount').value : $('importAccountSelect').value).trim());
+}
+function showNewAccount(){
+ const isNew=$('importAccountSelect').value==='__new__';
+ $('newAccountWrap').hidden=!isNew;
+ if(!isNew){preferredAccount=$('importAccountSelect').value;void rememberAccount(preferredAccount);}
+ ready();
+}
+$('importAccountSelect').addEventListener('change',()=>{accountTouched=true;showNewAccount();});
 $('importAccount').addEventListener('input',()=>{accountTouched=true;});
-$('importAccount').addEventListener('change',()=>{void rememberAccount($('importAccount').value.trim());});
+$('importAccount').addEventListener('change',()=>{try{preferredAccount=C.accountName($('importAccount').value.trim());void rememberAccount(preferredAccount);}catch{}});
+async function loadRootAccounts(handle){
+ if(!handle||handle!==root)return;
+ const version=selectionVersion,names=new Set();
+ try{
+  const m=await C.manifest(handle);
+  for(const a of m.accounts||[]){try{names.add(C.accountName(a));}catch{}}
+  for await(const [name,entry] of handle.entries()){
+   if(entry.kind==='directory')try{names.add(C.accountName(name));}catch{}
+  }
+ }catch{
+  // A remembered self handle without access may still use the viewer's known accounts.
+  if(handle.name===selfRootName)for(const a of catalog?.accounts||[])try{names.add(C.accountName(a));}catch{}
+ }
+ if(handle!==root||version!==selectionVersion)return;
+ const select=$('importAccountSelect'),prior=select.value,sorted=[...names].sort();
+ select.replaceChildren(...sorted.map(a=>new Option(a,a)),new Option('+ New account…','__new__'));
+ const wanted=accountTouched?prior:preferredAccount;
+ select.value=names.has(wanted)?wanted:sorted.length?sorted[0]:'__new__';
+ if(select.value==='__new__')$('importAccount').value=preferredAccount;
+ showNewAccount();
+ $('accountInfo').textContent=names.size?names.size+' existing account folder(s) found. Select one, or choose New.':'No existing accounts found. Enter a new account folder name.';
+}
+
 function rootPathLabel(handle){return handle?.name?handle.name+'/':'(none)';}
 async function updateRootInfo(handle){
  // A browser directory handle exposes only its folder name, never the absolute path.
@@ -110,11 +143,13 @@ async function updateRootInfo(handle){
  $('reindexDirInfo').textContent='Using '+name;
 }
 function setRoot(handle,{recent=false}={}){
- root=handle;repairPreview=0;repairCanRebuild=false;
- $('previewReindex').disabled=!handle||busy||repairBusy;
- $('startReindex').disabled=true;
- $('reindexStatus').textContent=handle?'Folder selected. Preview this root before rebuilding its catalog.':'Select an archive root above.';
+ root=handle;readerPreview=0;
+ $('previewReaders').disabled=!handle||busy||repairBusy||readerBusy;
+ $('upgradeReaders').disabled=true;
+ $('readerStatus').textContent='Back up the archive before updating saved message pages.';
  void updateRootInfo(handle,{recent});
+ if(handle)void loadRootAccounts(handle);
+ else $('accountInfo').textContent='Choose an archive root to load existing accounts.';
  ready();
 }
 async function loadRecent(){
@@ -124,7 +159,7 @@ async function loadRecent(){
   db=await recentDB();
   const [handle,account]=await Promise.all([dbGet(db,folderPreference),dbGet(db,accountPreference)]);
   if(typeof account==='string'&&!accountTouched){
-   try{$('importAccount').value=C.accountName(account);}catch{/* Ignore stale invalid values. */}
+   try{preferredAccount=C.accountName(account);$('importAccount').value=preferredAccount;}catch{/* Ignore stale invalid values. */}
   }
   if(handle?.kind==='directory'&&handle.name===selfRootName&&before===selectionVersion&&!root){
    recentRoot=handle;
@@ -162,13 +197,14 @@ function pickRoot(){
  return showDirectoryPicker(options);
 }
 $('chooseDir').onclick=async()=>{
- if(busy||repairBusy)return;
+ if(busy||repairBusy||readerBusy)return;
  try{
   const chosen=await pickRoot();
   if(chosen.name==='__email_archiver'&&await C.exists(chosen,'index.html'))throw Error('APP_SUBFOLDER');
   selectionVersion++;
   setRoot(chosen);
   void rememberRecent(chosen);
+  await runCatalogSync(chosen);
  }catch(e){if(e.name!=='AbortError')showError(e);}
 };
 void loadRecent();
@@ -184,11 +220,11 @@ async function install(dir){
  if(!await C.exists(dir,paths.current)&&!await C.exists(dir,'archive.js')&&!await C.exists(dir,'assets/catalog/archive.js'))await C.write(dir,paths.current,C.wrap(C.empty()));
 }
 function progress(s){$('progress').value=s.totalBytes?Math.min(100,100*s.bytes/s.totalBytes):0;for(const [id,k] of [['readCount','read'],['newCount','new'],['dupeCount','duplicates'],['refreshedCount','refreshed'],['emlSavedCount','emlSaved'],['emlReusedCount','emlReused'],['errorCount','errors']])$(id).textContent=s[k].toLocaleString('en-GB');$('progressDetail').textContent=(s.bytes/1024**2).toFixed(1)+' / '+(s.totalBytes/1024**2).toFixed(1)+' MiB read · '+s.committed+' changes committed to the catalog';}
-$('start').onclick=async()=>{if(busy||repairBusy)return;let acc;try{acc=C.accountName($('importAccount').value.trim());}catch(e){showError(e);return;}
+$('start').onclick=async()=>{if(busy||repairBusy||readerBusy)return;let acc;try{acc=selectedAccount();}catch(e){showError(e);return;}
  // Request access from the user's Start click (never silently at startup).
  try{await allowRoot(root);}catch(e){showError(e);return;}
- void rememberAccount(acc);
- busy=true;controller=new AbortController();$('repairProgressPanel').hidden=true;$('progressPanel').hidden=false;$('stop').hidden=false;$('chooseDir').disabled=true;$('previewReindex').disabled=true;$('files').disabled=true;$('importAccount').disabled=true;$('retainSignedEml').disabled=true;$('retainStarredEml').disabled=true;$('retainImportantEml').disabled=true;ready();notice('');$('status').textContent='Importing. Keep this tab open…';try{await install(root);const imp=new C.Importer(root,{signal:controller.signal,onProgress:progress,emlPolicy:{signed:$('retainSignedEml').checked,encrypted:$('retainSignedEml').checked,starred:$('retainStarredEml').checked,important:$('retainImportantEml').checked}});const report=await imp.run(Array.from($('files').files),acc);
+ preferredAccount=acc;void rememberAccount(acc);
+ busy=true;controller=new AbortController();$('repairProgressPanel').hidden=true;$('progressPanel').hidden=false;$('stop').hidden=false;$('chooseDir').disabled=true;$('previewReindex').disabled=true;$('files').disabled=true;$('importAccount').disabled=true;$('importAccountSelect').disabled=true;$('retainSignedEml').disabled=true;$('retainStarredEml').disabled=true;$('retainImportantEml').disabled=true;ready();notice('');$('status').textContent='Importing. Keep this tab open…';try{await install(root);const imp=new C.Importer(root,{signal:controller.signal,onProgress:progress,emlPolicy:{signed:$('retainSignedEml').checked,encrypted:$('retainSignedEml').checked,starred:$('retainStarredEml').checked,important:$('retainImportantEml').checked}});const report=await imp.run(Array.from($('files').files),acc);
 const viewerPath=(await C.catalogPaths(root)).viewerDir+'index.html';
 $('status').textContent=report.interrupted?'Import stopped':'Import complete';
 if(report.issues.length)notice('Some messages could not be imported. Source offsets and error codes are in '+acc+'/catalog/import-….json. Source files were not modified.');
@@ -205,7 +241,7 @@ else if(!report.issues.length)notice('Import saved to '+root.name+'. Open its ow
   showError(e);
  }
  try{await readCatalog();}catch{}
-}finally{busy=false;$('stop').hidden=true;$('chooseDir').disabled=false;$('previewReindex').disabled=!root;$('files').disabled=false;$('importAccount').disabled=false;$('retainSignedEml').disabled=false;$('retainStarredEml').disabled=false;$('retainImportantEml').disabled=false;ready();}};
+}finally{busy=false;$('stop').hidden=true;$('chooseDir').disabled=false;$('previewReindex').disabled=!root;$('files').disabled=false;$('importAccount').disabled=false;$('importAccountSelect').disabled=false;$('retainSignedEml').disabled=false;$('retainStarredEml').disabled=false;$('retainImportantEml').disabled=false;ready();}};
 $('stop').onclick=()=>{controller?.abort();$('status').textContent='Finishing the current message and committing the catalog…';};
 function errorText(e){const msgs={APP_SUBFOLDER:'Choose the parent archive root, not its __email_archiver application subfolder.',RECENT_ACCESS:'Archive folder access is not available. Click Import folder root to select it again, then retry.',LOCKED:'Another import or catalog repair may already be writing to this folder. Close other archive tabs and retry.',ACCOUNT:'Enter a valid account folder name, such as personal.',BROWSER:'Import requires a current desktop Chrome or Edge with the File System Access API.',CATALOG:'The catalog could not be loaded. Check the folder is complete and retry importing from your backup.',FORMAT:'Unsupported or damaged catalog format.',NONARCHIVE:'The selected folder contains another index.html. Choose an empty folder or an archive created by this tool.',OLD_ARCHIVE_FORMAT:'This is an older archive layout. For testing, choose a new empty archive root and reimport the original MBOX. No automatic migration is performed.'};return msgs[e.message]||('Operation failed ('+e.name+'). Check permissions, free space and whether another tab is writing to the archive.');}
 function showError(e){notice(errorText(e));}
