@@ -30,6 +30,8 @@
   button.addEventListener('click',()=>{
    theme=theme==='dark'?'light':'dark';
    apply(theme);
+   // Update existing message links so they carry the theme even if opened in a new tab.
+   if(typeof window!=='undefined'&&typeof window.dispatchEvent==='function'&&typeof Event==='function')window.dispatchEvent(new Event('archive-theme-change'));
    try{localStorage.setItem(KEY,theme);}catch{/* The current tab still switches. */}
   });
  }

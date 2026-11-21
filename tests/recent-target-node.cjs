@@ -36,7 +36,7 @@ const db={close(){},transaction(store,mode){const tx={objectStore(){return {
  get(key){const req={};queueMicrotask(()=>{req.result=stored.get(key);req.onsuccess?.();});return req;},
  put(value,key){stored.set(key,value);queueMicrotask(()=>tx.oncomplete?.());}};}};return tx;}};
 const indexedDB={open(){idbOpen++;const request={result:db};queueMicrotask(()=>request.onsuccess?.());return request;}};
-const document={getElementById:element,createElement(tag){return node(tag);},
+const document={getElementById:element,documentElement:{getAttribute(name){return name==='data-theme'?'light':null;}},createElement(tag){return node(tag);},
  head:{append(script){const name=String(script.src).split('?')[0];const data=name.endsWith('/assets/catalog/archive.js')?viewerManifest:
  name.endsWith('/personal/catalog/one.js')?{kind:'metadata',records:[record]}:null;
  queueMicrotask(()=>{if(data){window.MailArchive.receive(data);script.onload?.();}else script.onerror?.();});}}};
@@ -71,7 +71,7 @@ async function main(){
  assert.equal(element('importAccount').value,'business','Last account must be pre-selected');
  assert.equal(permissions,0,'Opening the page must not request disk permission');
  assert(element('dirInfo').textContent.includes('tmp/'));
- assert(element('dirInfo').textContent.includes('Full device path unavailable'));
+ assert(element('dirInfo').textContent.includes('Currently selected: /tmp/'),'Root display should remain concise and show the selected folder name.');
  assert.equal(element('previewReindex').disabled,false);
  assertBrowse('initial');
  element('importTab').onclick();
@@ -103,7 +103,7 @@ async function main(){
  const otherElements=new Map();
  const otherEl=id=>{if(!otherElements.has(id))otherElements.set(id,node('div',id));return otherElements.get(id);};
  const otherWindow={showDirectoryPicker:window.showDirectoryPicker,addEventListener(){}};
- const otherDocument={getElementById:otherEl,createElement(tag){return node(tag);},
+ const otherDocument={getElementById:otherEl,documentElement:{getAttribute(name){return name==='data-theme'?'light':null;}},createElement(tag){return node(tag);},
   head:{append(script){const name=String(script.src).split('?')[0];const response=name.endsWith('/assets/catalog/archive.js')?viewerManifest:
     name.endsWith('/personal/catalog/one.js')?{kind:'metadata',records:[record]}:null;
    queueMicrotask(()=>{if(response){otherWindow.MailArchive.receive(response);script.onload?.();}else script.onerror?.();});}}};
@@ -112,7 +112,7 @@ async function main(){
   Option:function Option(text,value){return {text,value};},
   sessionStorage:{getItem(){return null;},setItem(){},removeItem(){}},
   AbortController,console,setTimeout,clearTimeout,requestAnimationFrame:f=>f()},{filename:'other-instance/app.js'});
- for(let i=0;i<10&&!otherEl('dirInfo').textContent.includes('Self archive');i++)await tick();
+ for(let i=0;i<10&&!otherEl('dirInfo').textContent.includes('Currently selected:');i++)await tick();
  assert.equal(otherWindow.ArchiveUI.root,null,'Another index.html must not receive this archive folder handle');
  assert.equal(otherEl('importAccount').value,'personal','Another index.html must not receive this archive account selection');
  assert(otherEl('dirInfo').textContent.includes('another-archive/'),'Another viewer must default logically to its own archive');
