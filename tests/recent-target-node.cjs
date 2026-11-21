@@ -71,7 +71,7 @@ async function main(){
  assert.equal(element('importAccount').value,'business','Last account must be pre-selected');
  assert.equal(permissions,0,'Opening the page must not request disk permission');
  assert(element('dirInfo').textContent.includes('tmp/'));
- assert(element('dirInfo').textContent.includes('Full device path unavailable'));
+ assert(element('dirInfo').textContent.includes('Currently selected: /RecentMail/'),'Root display should remain concise and show the selected folder name.');
  assert.equal(element('previewReindex').disabled,false);
  assertBrowse('initial');
  element('importTab').onclick();
