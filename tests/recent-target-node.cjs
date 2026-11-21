@@ -46,7 +46,7 @@ const C={VIEWER_DIR:'__email_archiver/',MANIFEST:'__email_archiver/assets/catalo
  async catalogPaths(){return {viewerDir:'__email_archiver/',current:'__email_archiver/assets/catalog/archive.js'};},
  async exists(root,p){return p==='__email_archiver/index.html'||p==='index.html'||p==='__email_archiver/assets/catalog/archive.js';},
  async read(root,p){if(p.endsWith('index.html'))return '<script src="assets/core.js"></script>';
-  if(p.endsWith('assets/bundle.js'))return 'globalThis.ArchiveBundle={};\\n'.replace('\\\\n','\\n');
+  if(p.endsWith('assets/bundle.js'))return 'globalThis.ArchiveBundle={};\n';
   throw Error('Browse must not read through import target');},
  async write(root,p){stages.push('viewer-install:'+p);},json:JSON.stringify,empty(){return viewerManifest;},
  Importer:class{async run(files,account){stages.push('mbox:'+account);return {interrupted:false,issues:[]};}},
@@ -110,8 +110,8 @@ async function main(){
  await el('start').onclick();
  assert.equal(stages[0],'existing-update','Existing HTML refresh must run first');
  assert(stages.indexOf('mbox:work')>0,'The MBOX importer must run after existing HTML refresh');
- assert(stages.filter(x=>x.startsWith('viewer-install:')).length<=1,
-  'Unchanged application assets should not be rewritten on repeat import');
+ assert.equal(stages.filter(x=>x.startsWith('viewer-install:')).length,0,
+  'Unchanged viewer files should never be rewritten on repeat import');
  assert.equal(el('existingProgressPanel').hidden,false,'Existing result remains visible after new import begins');
  assert.equal(el('progressPanel').hidden,false,'New MBOX has its own progress panel');
  assertLink();
