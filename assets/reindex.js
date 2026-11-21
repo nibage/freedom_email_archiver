@@ -221,5 +221,38 @@ async function syncMissing(root,{signal,onProgress=()=>{},batchSize=100}={}){
   stats.committed=true;stats.accounts=accounts.size;notify();return stats;
  }finally{if(lock.lockWriter)await lock.lockWriter.close();}
 }
-g.ArchiveReindex={scan,fromHtml,inspect,rebuild,syncMissing,safeAttachmentHref};
+/* Read-only deep inventory for Check existing. Unlike syncMissing, this never
+   opens a writer or changes catalog files. */
+async function checkMissing(root,{signal,onProgress=()=>{}}={}){
+ const stats={scanned:0,indexed:0,missing:0,damaged:false,errors:0,interrupted:false};
+ const notify=()=>onProgress({...stats});
+ const known=new Map();
+ try{
+  const m=await C.manifest(root);
+  for(const seg of m.segments){
+   if(signal?.aborted){stats.interrupted=true;notify();return stats;}
+   const data=C.unwrap(await C.read(root,seg.meta));
+   if(data.kind!=='metadata'||!Array.isArray(data.records))throw Error('CATALOG');
+   if(seg.search&&!await C.exists(root,seg.search))throw Error('MISSING_SEARCH_INDEX');
+   for(const r of data.records){
+    const key=r.account+'/'+r.id;
+    if(!r.path||(known.has(key)&&known.get(key)!==r.path))throw Error('CATALOG');
+    known.set(key,r.path);
+   }
+  }
+ }catch{stats.damaged=true;}
+ notify();
+ for await(const source of scan(root)){
+  if(signal?.aborted){stats.interrupted=true;break;}
+  stats.scanned++;
+  const key=source.account+'/'+source.id;
+  if(known.get(key)===source.path)stats.indexed++;
+  else stats.missing++;
+  if(stats.scanned<=5||stats.scanned%25===0){
+   notify();await new Promise(r=>setTimeout(r,0));
+  }
+ }
+ notify();return stats;
+}
+g.ArchiveReindex={scan,fromHtml,inspect,rebuild,syncMissing,checkMissing,safeAttachmentHref};
 })(globalThis);

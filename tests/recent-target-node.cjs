@@ -21,8 +21,10 @@ const a={name:'tmp',kind:'directory',async queryPermission(){return 'prompt';},
  async *entries(){yield ['personal',{kind:'directory'}];yield ['work',{kind:'directory'}];}},
  b={name:'OtherMail',kind:'directory',async queryPermission(){return 'granted';},
  async *entries(){yield ['work',{kind:'directory'}];yield ['another',{kind:'directory'}];}};
+const fresh={name:'NewMail',kind:'directory',async queryPermission(){return 'granted';},
+ async *entries(){}};
 let prompts=0,pickNext=b,lastPicker=null,scanned=[],lastAction;
-const stages=[];
+const stages=[],created=new Map(),bundle={};
 a.requestPermission=async()=>{prompts++;return 'granted';};
 const selfRootKey='self-root:/tmp/__email_archiver/index.html',selfAccountKey='account:/tmp/__email_archiver/index.html';
 const saved=new Map([[selfRootKey,a],[selfAccountKey,'work'],['last',b],['lastAccount','foreign']]);
@@ -42,25 +44,29 @@ const window={showDirectoryPicker:async opts=>(lastPicker=opts,pickNext),addEven
 const C={VIEWER_DIR:'__email_archiver/',MANIFEST:'__email_archiver/assets/catalog/archive.js',
  PREVIOUS:'__email_archiver/assets/catalog/archive.previous.js',VERSION:1,
  accountName(s){if(!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(s))throw Error('ACCOUNT');return s;},
- async manifest(root){return {...viewerManifest,total:root===a?83:22,accounts:root===a?['personal','work']:['work','another']};},
+ async manifest(root){return root===fresh?{...viewerManifest,total:0,segments:[],accounts:[]}:
+ {...viewerManifest,total:root===a?83:22,accounts:root===a?['personal','work']:['work','another']};},
  async catalogPaths(){return {viewerDir:'__email_archiver/',current:'__email_archiver/assets/catalog/archive.js'};},
- async exists(root,p){return p==='__email_archiver/index.html'||p==='index.html'||p==='__email_archiver/assets/catalog/archive.js';},
- async read(root,p){if(p.endsWith('index.html'))return '<script src="assets/core.js"></script>';
+ async exists(root,p){return root===fresh?created.has(p):
+   p==='__email_archiver/index.html'||p==='index.html'||p==='__email_archiver/assets/catalog/archive.js';},
+ async read(root,p){if(root===fresh){if(created.has(p))return created.get(p);const e=Error('Not found');e.name='NotFoundError';throw e;}
+  if(p.endsWith('index.html'))return '<script src="assets/core.js"></script>';
   if(p.endsWith('assets/bundle.js'))return 'globalThis.ArchiveBundle={};\n';
   throw Error('Browse must not read through import target');},
- async write(root,p){stages.push('viewer-install:'+p);},json:JSON.stringify,empty(){return viewerManifest;},
+ async write(root,p,content){stages.push('viewer-install:'+p);if(root===fresh)created.set(p,content);},
+ json:JSON.stringify,wrap:JSON.stringify,empty(){return viewerManifest;},
  Importer:class{async run(files,account){stages.push('mbox:'+account);return {interrupted:false,issues:[]};}},
  fold:s=>String(s||'').toLowerCase()};
-const ArchiveReindex={async syncMissing(root,{onProgress}){
- scanned.push(root);onProgress({scanned:7,skipped:6,indexed:1});
- return {scanned:7,skipped:6,indexed:1,committed:true,interrupted:false};
-}};
+const ArchiveReindex={
+ async checkMissing(root,{onProgress}){stages.push('read-only-catalog-check');const result={scanned:7,indexed:6,missing:1,damaged:false,interrupted:false};onProgress(result);return result;},
+ async syncMissing(root,{onProgress}){scanned.push(root);onProgress({scanned:7,skipped:6,indexed:1});return {scanned:7,skipped:6,indexed:1,committed:true,interrupted:false};}
+};
 const ArchiveReaderUpgrade={async refresh(root,{write=false,onProgress=()=>{}}){
  stages.push(write?'existing-update':'existing-check');
  const data={scanned:4,total:write?4:null,eligible:1,updated:write?1:0,current:3,unsupported:0,errors:0,interrupted:false};
  onProgress(data);return data;
 }};
-vm.runInNewContext(src,{window,document,indexedDB,ArchiveCore:C,ArchiveReindex,ArchiveReaderUpgrade,ArchiveBundle:{},
+vm.runInNewContext(src,{window,document,indexedDB,ArchiveCore:C,ArchiveReindex,ArchiveReaderUpgrade,ArchiveBundle:bundle,
  location:{pathname:'/tmp/__email_archiver/index.html'},showDirectoryPicker:window.showDirectoryPicker,
  Option:function Option(text,value){return {text,value};},sessionStorage:{getItem(){return null;},setItem(){},removeItem(){}},
  AbortController,console,setTimeout,clearTimeout,requestAnimationFrame:f=>f()},{filename:'assets/app.js'});
@@ -82,12 +88,13 @@ async function main(){
  el('importTab').onclick();assert.equal(el('browse').hidden,true);
  el('browseTab').onclick();assertLink();
  await el('chooseDir').onclick();
- assert.equal(scanned.length,1,'Explicit folder choice starts incremental catalog check');
- assert.equal(scanned[0],b);
+ assert.equal(scanned.length,0,'Selecting a folder must not scan or rewrite the catalog');
  assert.equal(window.ArchiveUI.root,b);
  assert.equal(lastPicker.startIn,a);
+ assert.equal(lastPicker.mode,'read','Choosing a folder must not request write permission');
  assert(!html.includes('id="repairProgressPanel"'),'Catalog has no separate progress card.');
- assert.match(el('catalogStatus').textContent,/Added 1 missing catalog entries/,'Catalog result appears inline under import actions.');
+ await tick();
+ assert.match(el('catalogStatus').textContent,/Archive selected/,'Root selection displays a lightweight manifest summary.');
  assert.equal(el('importAccountSelect').value,'work');
  el('importAccountSelect').value='__new__';
  el('importAccountSelect').listeners.change();
@@ -98,6 +105,9 @@ async function main(){
  // Check existing stays in the action row and puts its result just underneath.
  await el('previewReaders').onclick();
  assert.match(el('readerStatus').textContent,/4 HTML messages checked · 1 older viewers eligible/);
+ assert.equal(stages[0],'read-only-catalog-check','Deep catalog inventory runs on Check existing, not root selection');
+ assert.match(el('catalogStatus').textContent,/1 unindexed saved HTML/);
+ assert.equal(scanned.length,0,'Check existing must not trigger catalog writes');
  assert.equal(el('existingProgressPanel').hidden,true,'Read-only check must not open the write-progress panel');
  await el('upgradeReaders').onclick();
  assert.match(el('existingProgressTitle').textContent,/Existing-email update complete/);
@@ -115,10 +125,32 @@ async function main(){
  assert.equal(el('existingProgressPanel').hidden,false,'Existing result remains visible after new import begins');
  assert.equal(el('progressPanel').hidden,false,'New MBOX has its own progress panel');
  assertLink();
- assert.equal(saved.get(selfRootKey),a,'Other folder must not replace self preference');
+ // Fresh root selection must only inspect filenames, never create catalogs, locks or viewer files.
+ const scanCount=scanned.length,writeCount=created.size;
+ pickNext=fresh;
+ await el('chooseDir').onclick();
+ await tick();
+ assert.equal(scanned.length,scanCount,'Selecting a new root must avoid the deep catalog scan');
+ assert.equal(created.size,writeCount,'Selecting a new folder cannot write application files');
+ assert.equal(el('createArchive').hidden,false,'A new destination reveals Create archive here');
+ assert.match(el('rootSetupInfo').textContent,/No Email Archiver installed/);
+ assert.equal(el('rootOpenInfo').hidden,false,'Opening instructions should be visible for a new archive');
+ assert(html.includes('id="rootOpenInfo"')&&html.includes('double-click <code>index.html</code>'),'HTML contains the actual launcher instructions.');
+ // An explicit Create action builds the nested viewer and root launcher.
+ bundle['index.html']='<script src="assets/core.js"></script>';
+ await el('createArchive').onclick();
+ assert(created.has('__email_archiver/index.html'),'Full archive viewer is copied under __email_archiver/');
+ assert(created.has('index.html'),'Root launcher is created for double-clicking');
+ assert.match(created.get('index.html'),/href="__email_archiver\/index.html"/);
+ assert.match(created.get('index.html'),/FREEDOM-ARCHIVE-LAUNCHER/);
+ assert.match(el('rootSetupInfo').textContent,/Archive ready/);
+ assert.equal(el('createArchive').hidden,true);
+ assertLink();
+  assert.equal(saved.get(selfRootKey),a,'Other folder must not replace self preference');
  assert.equal(saved.get('last'),b,'Ignore the global last folder from another archive');
  console.log('PASS remembered self-root and existing account selection');
- console.log('PASS explicit root choice triggers incremental all-account catalog check');
+ console.log('PASS root selection avoids deep scans and creates no files; Check existing scans read-only');
+ console.log('PASS explicit archive installation creates a self-contained viewer and working root launcher');
  console.log('PASS New account reveals its name field, imported account is validated');
  console.log('PASS Browse links remain clickable after selecting another root');
 }

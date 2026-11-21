@@ -58,14 +58,14 @@ function tab(which){
 }
 $('browseTab').onclick=()=>tab('browse');
 $('importTab').onclick=()=>tab('import');
-function ready(){$('start').disabled=busy||repairBusy||readerBusy||!root||!$('files').files.length;}
+function ready(){$('start').disabled=busy||repairBusy||readerBusy||rootUnsafe||rootProbing||!root||!$('files').files.length;}
 // Each opened index.html has its own remembered root/account. No global "last" folder.
 const viewerKey=location.pathname;
 const folderPreference='self-root:'+viewerKey,accountPreference='account:'+viewerKey;
 const viewerParts=decodeURIComponent(viewerKey).split('/').filter(Boolean);
 const selfRootName=viewerParts[nestedViewer?viewerParts.length-3:viewerParts.length-2]||'archive';
 const selfViewerPath=selfRootName+'/'+(nestedViewer?'__email_archiver/':'')+'index.html';
-let recentRoot=null,selectionVersion=0,accountTouched=false,preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null;
+let recentRoot=null,selectionVersion=0,accountTouched=false,preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null,rootUnsafe=false,rootIsNew=false,rootHasAccounts=false,rootAccountsResolved=false,rootProbing=false;
 function recentDB(){
  return new Promise((resolve,reject)=>{
   let request;try{request=indexedDB.open('offline-email-archiver-folders',1);}catch(e){reject(e);return;}
@@ -120,6 +120,7 @@ async function loadRootAccounts(handle){
   if(handle.name===selfRootName)for(const a of catalog?.accounts||[])try{names.add(C.accountName(a));}catch{}
  }
  if(handle!==root||version!==selectionVersion)return;
+ rootHasAccounts=names.size>0;rootAccountsResolved=true;
  const select=$('importAccountSelect'),prior=select.value,sorted=[...names].sort();
  select.replaceChildren(...sorted.map(a=>new Option(a,a)),new Option('+ New account…','__new__'));
  const wanted=accountTouched?prior:preferredAccount;
@@ -142,16 +143,68 @@ async function updateRootInfo(handle){
  $('dirInfo').textContent='Currently selected: '+name;
 
 }
+async function quickRootCheck(handle){
+ const version=selectionVersion;
+ const modern=await C.exists(handle,C.VIEWER_DIR+'index.html');
+ const legacy=await C.exists(handle,'index.html');
+ let oldKind='none';
+ if(legacy){
+  const page=await C.read(handle,'index.html');
+  oldKind=page.includes('assets/core.js')?'archive':
+   page.includes('FREEDOM-ARCHIVE-LAUNCHER')?'launcher':'unrelated';
+ }
+ if(handle!==root||version!==selectionVersion)return;
+ rootUnsafe=oldKind==='unrelated';rootProbing=false;
+ rootIsNew=!modern&&!legacy;
+ $('previewReaders').disabled=rootUnsafe||busy||repairBusy||readerBusy;
+ $('upgradeReaders').disabled=true;
+ $('rootSetup').hidden=false;
+ $('rootOpenInfo').hidden=!(rootIsNew||modern||oldKind==='launcher');
+ $('createArchive').hidden=!(rootIsNew||(modern&&!legacy)||(oldKind==='launcher'&&!modern));
+ $('createArchive').disabled=busy||repairBusy||readerBusy||rootUnsafe;
+ if(rootUnsafe){
+  $('rootSetupInfo').textContent='This folder already contains an unrelated index.html. Choose another folder; no files have been modified.';
+  $('catalogStatus').textContent='Archive selection rejected. Existing files will not be overwritten.';
+ }else if(rootIsNew){
+  $('rootSetupInfo').textContent='No Email Archiver installed in /'+handle.name+'/. Create archive here or Start import will create __email_archiver/ and an index.html launcher in this root folder.';
+  $('catalogStatus').textContent='New destination selected. No catalog scan is necessary. Check existing can scan saved account folders if present.';
+ }else if(oldKind==='launcher'&&!modern){
+  $('rootSetupInfo').textContent='A root launcher exists, but its __email_archiver/index.html is missing. Choose Create archive here to restore the application.';
+  $('catalogStatus').textContent='The archive viewer needs to be installed before browsing.';
+ }else{
+  let count='unknown';
+  try{const m=await C.manifest(handle);count=String(m.total);}catch{count='unknown';}
+  if(handle!==root||version!==selectionVersion)return;
+  $('rootSetupInfo').textContent=modern
+   ?'Email Archiver found in /'+handle.name+'/. Check existing to verify saved HTML and catalog entries.'
+   :'Existing root-level archive found. It will be extended without replacing its index.html.';
+  $('catalogStatus').textContent='Archive selected · '+count+' messages indexed. Choose Check existing for a deeper inspection.';
+ }
+ ready();
+}
 function setRoot(handle,{recent=false}={}){
- root=handle;readerPreview=0;
- $('catalogStatus').textContent=handle?'Archive selected. Checking saved catalogs after folder selection…':'Choose an archive root to check saved catalog entries.';
+ root=handle;readerPreview=0;rootUnsafe=false;rootIsNew=false;rootHasAccounts=false;rootAccountsResolved=false;rootProbing=!!handle;
+ $('rootSetup').hidden=!handle;
+ $('createArchive').hidden=true;
+ $('rootOpenInfo').hidden=true;
+ $('rootSetupInfo').textContent=handle?'Checking archive entry files…':'';
+ $('catalogStatus').textContent=handle?'Checking archive entry files (no catalog scan)…':'Choose an archive root to check saved catalog entries.';
  $('existingProgressPanel').hidden=true;
  $('previewReaders').disabled=!handle||busy||repairBusy||readerBusy;
  $('upgradeReaders').disabled=true;
  $('readerStatus').textContent='Back up the archive before updating saved message pages.';
  void updateRootInfo(handle,{recent});
- if(handle)void loadRootAccounts(handle);
- else $('accountInfo').textContent='Choose an archive root to load existing accounts.';
+ if(handle){
+  void quickRootCheck(handle).catch(e=>{
+   if(handle!==root)return;
+   rootUnsafe=true;rootProbing=false;
+   $('rootSetup').hidden=false;
+   $('rootSetupInfo').textContent='Could not inspect this folder: '+errorText(e)+'. No files were changed.';
+   $('catalogStatus').textContent='Unable to verify archive entry files.';
+   ready();
+  });
+  void loadRootAccounts(handle);
+ }else $('accountInfo').textContent='Choose an archive root to load existing accounts.';
  ready();
 }
 async function loadRecent(){
@@ -185,16 +238,16 @@ async function rememberRecent(handle){
  }catch{/* The folder is still selected for this session. */}
  finally{db?.close();}
 }
-async function allowRoot(handle){
+async function allowRoot(handle,mode='readwrite'){
  if(!handle)throw Error('RECENT_ACCESS');
  if(typeof handle.queryPermission!=='function')return;
- if(await handle.queryPermission({mode:'readwrite'})==='granted')return;
- if(typeof handle.requestPermission==='function'&&await handle.requestPermission({mode:'readwrite'})==='granted')return;
+ if(await handle.queryPermission({mode})==='granted')return;
+ if(typeof handle.requestPermission==='function'&&await handle.requestPermission({mode})==='granted')return;
  throw Error('RECENT_ACCESS');
 }
 function pickRoot(){
  if(!window.showDirectoryPicker)throw Error('BROWSER');
- const options={mode:'readwrite',id:'mailarchive'};
+ const options={mode:'read',id:'mailarchive'};
  if(recentRoot)options.startIn=recentRoot;
  return showDirectoryPicker(options);
 }
@@ -206,45 +259,83 @@ $('chooseDir').onclick=async()=>{
   selectionVersion++;
   setRoot(chosen);
   void rememberRecent(chosen);
-  await runCatalogSync(chosen);
  }catch(e){if(e.name!=='AbortError')showError(e);}
 };
 void loadRecent();
 
 $('files').onchange=()=>{const files=Array.from($('files').files);$('fileInfo').textContent=files.length+' files · '+(files.reduce((s,f)=>s+f.size,0)/1024**3).toFixed(2)+' GiB. Allow at least this space plus a reserve on the destination drive.';ready();};
+const rootLauncherHTML='<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
+ '<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; style-src &#39;unsafe-inline&#39;">'+
+ '<meta http-equiv="refresh" content="0; url=__email_archiver/index.html"><title>Open Email Archive</title>'+
+ '<style>body{font:16px system-ui,sans-serif;max-width:560px;margin:10vh auto;padding:24px;color:#292d35}a{color:#6c2943}</style></head>'+
+ '<body><main><!-- FREEDOM-ARCHIVE-LAUNCHER --><h1>Email Archive</h1><p>'+
+ 'Open your portable archive: <a href="__email_archiver/index.html">Open Email Archive</a>.</p>'+
+ '<p>This launcher and the archive folder can be moved together.</p></main></body></html>';
 async function install(dir,{onProgress=()=>{}}={}){
  const legacy=await C.exists(dir,'index.html'),modern=await C.exists(dir,C.VIEWER_DIR+'index.html');
- if(legacy||modern){
-  const html=await C.read(dir,modern?C.VIEWER_DIR+'index.html':'index.html');
-  if(!html.includes('assets/core.js'))throw Error('NONARCHIVE');
+ let kind='none';
+ if(legacy){
+  const html=await C.read(dir,'index.html');
+  kind=html.includes('assets/core.js')?'archive':
+   html.includes('FREEDOM-ARCHIVE-LAUNCHER')?'launcher':'unrelated';
+  if(kind==='unrelated')throw Error('NONARCHIVE');
  }
- const appDir=legacy&&!modern?'':C.VIEWER_DIR;
+ const appDir=modern||kind!=='archive'?C.VIEWER_DIR:'';
  const entries=[...Object.entries(ArchiveBundle),
   ['assets/bundle.js','globalThis.ArchiveBundle='+C.json(ArchiveBundle)+';\n']];
  let checked=0,changed=0;
- // A repeat import should not rewrite the viewer's 16 application assets,
- // especially when the destination is on a synced virtual drive.
+ // New roots are created directly. Repeat imports compare files and do not
+ // rewrite identical assets (less synced-drive I/O and Defender activity).
  for(const [p,t] of entries){
-  const path=appDir+p;
-  let existing=null;
-  try{existing=await C.read(dir,path);}
-  catch(e){if(e.name!=='NotFoundError')throw e;}
-  if(existing!==t){await C.write(dir,path,t);changed++;}
+  const filePath=appDir+p;
+  let previous=null;
+  if(modern||kind==='archive'){
+   try{previous=await C.read(dir,filePath);}
+   catch(e){if(e.name!=='NotFoundError')throw e;}
+  }
+  if(previous!==t){await C.write(dir,filePath,t);changed++;}
   checked++;
-  onProgress({checked,total:entries.length,changed});
+  onProgress({checked,total:entries.length+(!legacy?1:0),changed});
+ }
+ let launcherCreated=false;
+ if(!legacy){
+  await C.write(dir,'index.html',rootLauncherHTML);
+  launcherCreated=true;changed++;
+  checked++;
+  onProgress({checked,total:entries.length+1,changed});
  }
  const paths=await C.catalogPaths(dir);
  if(!await C.exists(dir,paths.current)&&!await C.exists(dir,'archive.js')&&
   !await C.exists(dir,'assets/catalog/archive.js'))await C.write(dir,paths.current,C.wrap(C.empty()));
- return {checked,changed};
+ return {checked,changed,launcherCreated,viewerDir:paths.viewerDir};
 }
+$('createArchive').onclick=async()=>{
+ if(!root||rootUnsafe||rootProbing||busy||repairBusy||readerBusy)return;
+ const target=root;
+ try{await allowRoot(target);}catch(e){showError(e);return;}
+ busy=true;$('createArchive').disabled=true;
+ $('rootSetupInfo').textContent='Creating the portable archive in /'+target.name+'/…';
+ try{
+  const out=await install(target,{onProgress:p=>{
+   $('rootSetupInfo').textContent='Preparing archive: '+p.checked+' / '+p.total+' application files · '+p.changed+' saved.';
+  }});
+  $('rootSetupInfo').textContent='Archive ready in /'+target.name+'/. Open index.html from that folder; it links to __email_archiver/index.html.';
+  $('rootOpenInfo').hidden=false;
+  $('createArchive').hidden=true;
+  rootIsNew=false;
+  $('catalogStatus').textContent='Archive installed. Choose Check existing to inspect any saved emails or catalog entries.';
+  notice('Created portable Email Archive in /'+target.name+'/ (root index.html and __email_archiver/index.html). Open the selected folder in File Explorer to launch it.');
+  void loadRootAccounts(target);
+ }catch(e){$('rootSetupInfo').textContent='Archive creation failed: '+errorText(e);showError(e);}
+ finally{busy=false;$('createArchive').disabled=false;ready();}
+};
 function progress(s){$('progress').value=s.totalBytes?Math.min(100,100*s.bytes/s.totalBytes):0;for(const [id,k] of [['readCount','read'],['newCount','new'],['dupeCount','duplicates'],['refreshedCount','refreshed'],['emlSavedCount','emlSaved'],['emlReusedCount','emlReused'],['errorCount','errors']])$(id).textContent=s[k].toLocaleString('en-GB');$('progressDetail').textContent=(s.bytes/1024**2).toFixed(1)+' / '+(s.totalBytes/1024**2).toFixed(1)+' MiB read · '+s.committed+' changes committed to the catalog';}
 $('start').onclick=async()=>{
  if(busy||repairBusy||readerBusy)return;
  let acc;
  try{acc=selectedAccount();}catch(e){showError(e);return;}
  const target=root,sourceFiles=Array.from($('files').files);
- if(!target||!sourceFiles.length)return;
+ if(!target||rootUnsafe||rootProbing||!sourceFiles.length)return;
  // Permissions remain strictly user-gesture based; this button authorizes the pre-import update.
  try{await allowRoot(target);}catch(e){showError(e);return;}
  preferredAccount=acc;void rememberAccount(acc);
@@ -255,6 +346,8 @@ $('start').onclick=async()=>{
  for(const id of ['retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=true;
  $('stop').hidden=false;ready();notice('');
  try{
+  if(!(rootIsNew&&rootAccountsResolved&&!rootHasAccounts))await runCatalogSync(target,{signal:controller.signal,force:true});
+  if(controller.signal.aborted)return;
   const existing=await runExistingUpgrade(target,controller.signal,'Updating existing emails before new MBOX import');
   readerPreview=0;
   if(existing.interrupted||controller.signal.aborted){
@@ -272,12 +365,18 @@ $('start').onclick=async()=>{
   $('status').textContent='Preparing archive viewer…';
   $('progress').value=0;
   $('progressDetail').textContent='Checking local application files…';
-  await install(target,{onProgress:p=>{
+  const viewerInstallation=await install(target,{onProgress:p=>{
    $('status').textContent='Preparing archive viewer…';
    $('progress').value=p.total?100*p.checked/p.total:0;
    $('progressDetail').textContent=p.checked+' / '+p.total+' viewer files checked · '+
     p.changed+' changed files updated';
   }});
+  if(viewerInstallation.launcherCreated){
+   rootIsNew=false;
+   $('rootSetupInfo').textContent='Archive installed. Open index.html in /'+target.name+'/ to browse the new copy.';
+   $('rootOpenInfo').hidden=false;
+   $('createArchive').hidden=true;
+  }
   if(controller.signal.aborted){
    notice('Import stopped safely before MBOX processing. Existing HTML updates remain saved.');
    return;
@@ -326,39 +425,40 @@ function operateControls(active){
  $('files').disabled=active;
  $('importAccountSelect').disabled=active;
  $('importAccount').disabled=active;
- $('previewReaders').disabled=active||!root;
- $('upgradeReaders').disabled=active||!root||!readerPreview;
+ $('previewReaders').disabled=active||rootUnsafe||!root;
+ $('upgradeReaders').disabled=active||rootUnsafe||!root||!readerPreview;
  ready();
 }
-async function runCatalogSync(target){
- if(!target||busy||repairBusy||readerBusy)return;
+async function runCatalogSync(target,{signal=null,force=false}={}){
+ if(!target||repairBusy||(!force&&(busy||readerBusy)))return null;
  repairBusy=true;repairController=new AbortController();operateControls(true);
- $('stopReindex').hidden=false;
- $('catalogStatus').textContent='Checking saved account folders and catalog entries…';
- notice('');
+ $('stopReindex').hidden=!!signal;
+ $('catalogStatus').textContent='Recovering missing catalog entries from saved account folders…';
  try{
   const stats=await ArchiveReindex.syncMissing(target,{
-   signal:repairController.signal,
+   signal:signal||repairController.signal,
    onProgress:v=>{
-    $('catalogStatus').textContent=(v.scanned||0)+' HTML files found · '+(v.skipped||0)+' already indexed · '+(v.indexed||0)+' recovered'+(v.fullRebuild?' · rebuilding missing/damaged indexes':'');
+    $('catalogStatus').textContent=(v.scanned||0)+' HTML files found · '+(v.skipped||0)+
+     ' already indexed · '+(v.indexed||0)+' recovered'+
+     (v.fullRebuild?' · rebuilding missing/damaged indexes':'');
    }
   });
-  const summary=stats.interrupted?'Catalog check stopped; previous indexes remain available.':
+  const summary=stats.interrupted?'Catalog recovery stopped; the previous index is preserved.':
    stats.fullRebuild?'Catalog recovered from saved HTML: '+stats.indexed+' messages.':
    stats.indexed?'Added '+stats.indexed+' missing catalog entries; skipped '+stats.skipped+' existing ones.':
    'Catalog is up to date; '+stats.skipped+' messages already indexed. No indexes rewritten.';
   $('catalogStatus').textContent=summary;
   if(!stats.interrupted){
    try{await loadRootAccounts(target);}catch{}
-   try{await readCatalog();}catch{}
   }
+  return stats;
  }catch(e){
-  const text=e.message==='REINDEX_INCOMPLETE'
-   ?'Catalog check could not complete: one or more HTML pages failed validation. The previous catalog was preserved.'
+  $('catalogStatus').textContent=e.message==='REINDEX_INCOMPLETE'
+   ?'Catalog recovery stopped: saved HTML validation failed. Previous catalog retained.'
    :e.message==='LOCKED'
-    ?'Another tab is writing to this archive. Close it and try again.'
-    :'Catalog check failed ('+(e.message||e.name||'unknown cause')+'). Existing catalog was not replaced.';
-  $('catalogStatus').textContent=text;
+    ?'Another tab is already writing to the archive. Close it and try again.'
+    :'Catalog recovery failed ('+(e.message||e.name||'unknown error')+'). No replacement published.';
+  throw e;
  }finally{repairBusy=false;$('stopReindex').hidden=true;operateControls(false);}
 }
 $('stopReindex').onclick=()=>repairController?.abort();
@@ -429,16 +529,33 @@ async function runExistingUpgrade(target,signal,title){
  }finally{$('stopReaders').hidden=true;}
 }
 $('previewReaders').onclick=async()=>{
- if(!root||busy||repairBusy||readerBusy)return;
+ if(!root||rootUnsafe||rootProbing||busy||repairBusy||readerBusy)return;
  const target=root;
- try{await allowRoot(target);}catch(e){showError(e);return;}
+ try{await allowRoot(target,'read');}catch(e){showError(e);return;}
  readerBusy=true;readerPreview=0;readerController=new AbortController();
  readerControls(true);$('stopCheck').hidden=false;
  $('existingProgressPanel').hidden=true;
- $('readerStatus').textContent='Checking existing HTML emails…';
+ $('readerStatus').textContent='Checking saved HTML readers…';
+ $('catalogStatus').textContent='Checking existing catalog references (read-only)…';
  try{
+  const inventory=await ArchiveReindex.checkMissing(target,{
+   signal:readerController.signal,
+   onProgress:v=>{
+    $('catalogStatus').textContent=v.scanned+' HTML files inspected · '+v.indexed+
+     ' indexed · '+v.missing+' missing entries'+(v.damaged?' · catalog needs repair':'');
+   }
+  });
+  if(inventory.interrupted){
+   $('readerStatus').textContent='Check existing stopped. No archive files were changed.';
+   return;
+  }
+  $('catalogStatus').textContent=inventory.damaged
+   ?'Some catalog shards are missing or damaged. Start import or Reimport only existing to recover the catalog.'
+   :inventory.missing
+    ?inventory.missing+' unindexed saved HTML files found. They will be added before the next import or existing update.'
+    :'Catalog is up to date; '+inventory.indexed+' messages already indexed. No indexes rewritten.';
   const result=await ArchiveReaderUpgrade.refresh(target,{
-   signal:readerController.signal,onProgress:s=>{$('readerStatus').textContent=readerStatus(s);}
+   signal:readerController.signal,onProgress:x=>{$('readerStatus').textContent=readerStatus(x);}
   });
   readerPreview=!result.errors&&!result.interrupted?result.eligible:0;
   $('readerStatus').textContent=readerStatus(result)+(result.interrupted?' Check stopped.':
@@ -448,11 +565,13 @@ $('previewReaders').onclick=async()=>{
  finally{readerBusy=false;$('stopCheck').hidden=true;readerControls(false);}
 };
 $('upgradeReaders').onclick=async()=>{
- if(!root||!readerPreview||busy||repairBusy||readerBusy)return;
+ if(!root||rootUnsafe||rootProbing||!readerPreview||busy||repairBusy||readerBusy)return;
  const target=root;
  try{await allowRoot(target);}catch(e){showError(e);return;}
  readerBusy=true;readerController=new AbortController();readerControls(true);
  try{
+  await runCatalogSync(target,{signal:readerController.signal,force:true});
+  if(readerController.signal.aborted)return;
   const result=await runExistingUpgrade(target,readerController.signal,'Reimporting only existing saved HTML emails');
   readerPreview=0;
   if(result.errors)$('readerStatus').textContent='Some saved pages could not be updated. Check the result below, then run Check existing again.';

@@ -48,6 +48,11 @@ const globals={ArchiveCore:C,ArchiveEML:{safeOriginal:()=>true},crypto:{randomUU
 vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../assets/reindex.js'),'utf8'),{globalThis:globals,document:globals.document,crypto:{randomUUID:()=>String(writes.length+1)},setTimeout},{filename:'assets/reindex.js'});
 async function main(){
  const seen=[];
+ const baselineWrites=writes.length,baselineLocks=lockCount;
+ const check=await globals.ArchiveReindex.checkMissing(root,{});
+ assert.equal(check.scanned,2);assert.equal(check.indexed,1);assert.equal(check.missing,1);
+ assert.equal(writes.length,baselineWrites,'Check existing must be read-only');
+ assert.equal(lockCount,baselineLocks,'Check existing must not request a writer lock');
  let result=await globals.ArchiveReindex.syncMissing(root,{onProgress:s=>seen.push(s)});
  assert.equal(result.scanned,2);assert.equal(result.skipped,1);assert.equal(result.indexed,1);assert.equal(result.committed,true);
  assert.equal(reads.get(ida)||0,0,'Already indexed HTML must not be read');
@@ -59,6 +64,9 @@ async function main(){
  result=await globals.ArchiveReindex.syncMissing(root,{});
  assert.equal(result.indexed,0);assert.equal(result.skipped,2);assert.equal(result.committed,false);
  assert.equal(writes.length,writesAfter,'Up-to-date catalog must not be rewritten');
+ const confirmed=await globals.ArchiveReindex.checkMissing(root,{});
+ assert.equal(confirmed.missing,0);assert.equal(confirmed.indexed,2);
+ assert.equal(writes.length,writesAfter,'Repeated Check existing must never rewrite a catalog');
  assert.equal(reads.get(ida)||0,0,'Up-to-date files are not parsed');
  assert.equal(lockCount,lockClose,'Every writer lock must be released');
  // A missing catalog is recovered from all saved HTML without any MBOX.

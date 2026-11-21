@@ -35,8 +35,9 @@ const plainSource={account:'personal',folder,id:plainId,path:plainPath,
 const unknownPageC=makePageFor('c'.repeat(64)).replace(currentScript,'alert(1)');
 const pages=new Map([[messagePath,oldPage],[folder+'/email-'+'b'.repeat(64)+'.html',currentPageB],
  [folder+'/email-'+'c'.repeat(64)+'.html',unknownPageC]]);
+let fileOpens=0;
 const files=[...pages.keys()].map(p=>({account:'personal',folder,id:path.basename(p).slice(6,70),path:p,
- handle:{async getFile(){return {size:pages.get(p).length,async text(){return pages.get(p);}}}}}));
+ handle:{async getFile(){fileOpens++;return {size:pages.get(p).length,async text(){return pages.get(p);}}}}}));
 const writes=[];
 const C={
  Importer:class{async lock(){this.lockWriter={close:async()=>{}};}},
@@ -60,9 +61,11 @@ vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEnc
  assert.equal((await globals.ArchiveReaderUpgrade.evaluate(plainSource,'__email_archiver/')).status,'eligible','Recognized old pages without image scripts must also be theme-upgradable');
  const preview=await globals.ArchiveReaderUpgrade.refresh({}, {});
  assert.equal(preview.scanned,3);assert.equal(preview.eligible,1);assert.equal(preview.current,1);assert.equal(preview.unsupported,1);
+ assert.equal(fileOpens,3,'Read-only Check existing should open each saved HTML file once');
  assert.equal(writes.length,0,'Preview must never change saved HTML');
  const updated=await globals.ArchiveReaderUpgrade.refresh({}, {write:true});
  assert.equal(updated.updated,1);assert.deepEqual(writes,[messagePath]);
+ assert.equal(fileOpens,6,'Writing existing pages must use one scan and one file read per page');
  const after=pages.get(messagePath);
  assert.equal(/<main>([\s\S]*?)<\/main>/.exec(after)[1],body,'Original HTML mail body bytes must remain unchanged');
  assert(after.includes('--accent:#6c2943')&&after.includes('--accent:#f5a623'),'Updated shell must support burgundy and orange modes');
@@ -73,6 +76,8 @@ vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEnc
  assert.equal(writes.length,1,'Cancelled operation must not write another email');
  // A synced drive may leave createWritable({mode:'exclusive'}) unresolved.
  // The updater must stop cleanly with a useful error and close late locks.
+ // Restore one verified old reader so the lazy lock is actually needed.
+ pages.set(messagePath,oldPage);
  const OriginalImporter=C.Importer;
  let unlock,lateCloseCount=0,updates=[];
  C.Importer=class{
@@ -86,8 +91,8 @@ vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEnc
    ()=>globals.ArchiveReaderUpgrade.refresh({},{
     write:true,lockTimeoutMs:20,onProgress:x=>updates.push(x)
    }),e=>e.message==='ARCHIVE_LOCK_TIMEOUT');
-  assert(updates.some(x=>x.phase==='counting'&&x.counted>=1),
-   'Counting progress should be visible before waiting for the writer lock');
+  assert(updates.some(x=>x.phase==='reading'&&x.scanned>=1),
+   'Single-pass reading progress must appear before waiting for a writer lock');
   assert(updates.some(x=>x.phase==='waiting-lock'),
    'The UI must distinguish lock wait from a frozen HTML scan');
   unlock();await new Promise(resolve=>setTimeout(resolve,0));
@@ -102,6 +107,24 @@ vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEnc
   assert.equal(cancelledLock.interrupted,true,'Cancel must work during a pending lock');
   unlock();await new Promise(resolve=>setTimeout(resolve,0));
   assert.equal(lateCloseCount,2,'A late lock after cancellation must also close');
+  // If every saved page is already current, don't create archive.lock at all.
+  pages.set(messagePath,after);
+  let unnecessary=0;
+  C.Importer=class{async lock(){unnecessary++;throw Error('should not lock');}};
+  const unchanged=await globals.ArchiveReaderUpgrade.refresh({}, {write:true});
+  assert.equal(unchanged.updated,0);
+  assert.equal(unnecessary,0,'A no-change run should not open any write lock or trigger Defender writes');
+  // A protected destination may reject write access. Don't retry across every
+  // saved email and repeatedly provoke Windows Defender notifications.
+  pages.set(messagePath,oldPage);
+  let blockedAttempts=0;
+  C.Importer=class{async lock(){blockedAttempts++;throw Error('LOCKED');}};
+  await assert.rejects(
+   ()=>globals.ArchiveReaderUpgrade.refresh({},{write:true}),
+   e=>e.message==='LOCKED');
+  assert.equal(blockedAttempts,1,'Blocked writer must stop on the first attempt');
+  assert.deepEqual(writes,[messagePath],'Blocked writers must not modify saved mail');
+  pages.set(messagePath,after);
  }finally{C.Importer=OriginalImporter;}
 
  console.log('PASS: old email navigation shell updated without MBOX, body unchanged');
