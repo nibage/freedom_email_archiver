@@ -22,7 +22,7 @@ const sourceIndex=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const app=fs.readFileSync(path.join(root,'assets/app.js'),'utf8');
 const styles=fs.readFileSync(path.join(root,'assets/style.css'),'utf8');
 assert(sourceIndex.indexOf('id="notice"')<sourceIndex.indexOf('id="import"'),'Notices must appear above import panels.');
-assert(sourceIndex.indexOf('class="importgrid"')<sourceIndex.indexOf('id="progressPanel"')&&sourceIndex.indexOf('id="progressPanel"')<sourceIndex.indexOf('id="reindex"'),'Import progress must appear between the import form and catalog repair.');
+assert(sourceIndex.indexOf('class="importgrid"')<sourceIndex.indexOf('id="progressPanel"')&&sourceIndex.indexOf('id="progressPanel"')<sourceIndex.indexOf('class="panel import-guide"'),'Import progress must remain above incremental import guidance.');
 assert(sourceIndex.indexOf('id="repairProgressPanel"')>sourceIndex.indexOf('id="progressPanel"')&&sourceIndex.indexOf('id="repairProgressPanel"')<sourceIndex.indexOf('class="panel import-guide"'),'Catalog recovery progress must use the same activity area.');
 assert(styles.includes('grid-template-columns:repeat(4,minmax(0,1fr))')&&styles.includes('.filters .search{grid-column:span 2}'),'Search must retain half the filter row while dates match.');
 assert(sourceIndex.includes('id="previewReaders"')&&sourceIndex.includes('id="upgradeReaders"'),'Safe appearance update must be available for old saved HTML.');
