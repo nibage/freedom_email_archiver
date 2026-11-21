@@ -155,6 +155,8 @@ async function quickRootCheck(handle){
  if(handle!==root||version!==selectionVersion)return;
  rootUnsafe=oldKind==='unrelated';
  rootIsNew=!modern&&!legacy;
+ $('previewReaders').disabled=rootUnsafe||busy||repairBusy||readerBusy;
+ $('upgradeReaders').disabled=true;
  $('rootSetup').hidden=false;
  $('rootOpenInfo').hidden=!(rootIsNew||modern||oldKind==='launcher');
  $('createArchive').hidden=!(rootIsNew||(modern&&!legacy));
@@ -232,11 +234,11 @@ async function rememberRecent(handle){
  }catch{/* The folder is still selected for this session. */}
  finally{db?.close();}
 }
-async function allowRoot(handle){
+async function allowRoot(handle,mode='readwrite'){
  if(!handle)throw Error('RECENT_ACCESS');
  if(typeof handle.queryPermission!=='function')return;
- if(await handle.queryPermission({mode:'readwrite'})==='granted')return;
- if(typeof handle.requestPermission==='function'&&await handle.requestPermission({mode:'readwrite'})==='granted')return;
+ if(await handle.queryPermission({mode})==='granted')return;
+ if(typeof handle.requestPermission==='function'&&await handle.requestPermission({mode})==='granted')return;
  throw Error('RECENT_ACCESS');
 }
 function pickRoot(){
@@ -329,7 +331,7 @@ $('start').onclick=async()=>{
  let acc;
  try{acc=selectedAccount();}catch(e){showError(e);return;}
  const target=root,sourceFiles=Array.from($('files').files);
- if(!target||!sourceFiles.length)return;
+ if(!target||rootUnsafe||!sourceFiles.length)return;
  // Permissions remain strictly user-gesture based; this button authorizes the pre-import update.
  try{await allowRoot(target);}catch(e){showError(e);return;}
  preferredAccount=acc;void rememberAccount(acc);
@@ -411,8 +413,8 @@ function operateControls(active){
  $('files').disabled=active;
  $('importAccountSelect').disabled=active;
  $('importAccount').disabled=active;
- $('previewReaders').disabled=active||!root;
- $('upgradeReaders').disabled=active||!root||!readerPreview;
+ $('previewReaders').disabled=active||rootUnsafe||!root;
+ $('upgradeReaders').disabled=active||rootUnsafe||!root||!readerPreview;
  ready();
 }
 async function runCatalogSync(target){
@@ -514,9 +516,9 @@ async function runExistingUpgrade(target,signal,title){
  }finally{$('stopReaders').hidden=true;}
 }
 $('previewReaders').onclick=async()=>{
- if(!root||busy||repairBusy||readerBusy)return;
+ if(!root||rootUnsafe||busy||repairBusy||readerBusy)return;
  const target=root;
- try{await allowRoot(target);}catch(e){showError(e);return;}
+ try{await allowRoot(target,'read');}catch(e){showError(e);return;}
  readerBusy=true;readerPreview=0;readerController=new AbortController();
  readerControls(true);$('stopCheck').hidden=false;
  $('existingProgressPanel').hidden=true;
@@ -533,7 +535,7 @@ $('previewReaders').onclick=async()=>{
  finally{readerBusy=false;$('stopCheck').hidden=true;readerControls(false);}
 };
 $('upgradeReaders').onclick=async()=>{
- if(!root||!readerPreview||busy||repairBusy||readerBusy)return;
+ if(!root||rootUnsafe||!readerPreview||busy||repairBusy||readerBusy)return;
  const target=root;
  try{await allowRoot(target);}catch(e){showError(e);return;}
  readerBusy=true;readerController=new AbortController();readerControls(true);
