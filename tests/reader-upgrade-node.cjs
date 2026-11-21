@@ -47,7 +47,7 @@ globals.ArchiveReindex={
  }
 };
 const upgrader=fs.readFileSync(path.join(rootDir,'assets/reader-upgrade.js'),'utf8');
-vm.runInNewContext(upgrader, {globalThis:globals},{filename:'assets/reader-upgrade.js'});
+vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEncoder,btoa:bytes=>Buffer.from(bytes,'binary').toString('base64'),setTimeout},{filename:'assets/reader-upgrade.js'});
 (async()=>{
  const preview=await globals.ArchiveReaderUpgrade.refresh({}, {});
  assert.equal(preview.scanned,3);assert.equal(preview.eligible,1);assert.equal(preview.current,1);assert.equal(preview.unsupported,1);
