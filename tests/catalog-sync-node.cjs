@@ -45,7 +45,7 @@ function template(){
  }};
 }
 const globals={ArchiveCore:C,ArchiveEML:{safeOriginal:()=>true},crypto:{randomUUID:()=>String(writes.length+1)},document:{createElement:template}};
-vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../assets/reindex.js'),'utf8'),{globalThis:globals,crypto:{randomUUID:()=>String(writes.length+1)},setTimeout},{filename:'assets/reindex.js'});
+vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../assets/reindex.js'),'utf8'),{globalThis:globals,document:globals.document,crypto:{randomUUID:()=>String(writes.length+1)},setTimeout},{filename:'assets/reindex.js'});
 async function main(){
  const seen=[];
  let result=await globals.ArchiveReindex.syncMissing(root,{onProgress:s=>seen.push(s)});
