@@ -97,3 +97,15 @@ nav button{color:var(--ink)}
 .eml-options{gap:12px}
 footer{justify-content:flex-end}
 @media(max-width:760px){#import .importgrid,#import .activity-area,#import #reindex,#import .import-guide{max-width:100%}.target-actions{gap:10px}}
+
+/* Unified import / automatic catalog check: no second repair form. */
+.import-form #importAccountSelect{width:100%}
+#import #newAccountWrap{margin-top:9px}
+#accountInfo{margin-top:-12px;margin-bottom:10px;overflow-wrap:anywhere}
+#import .account-repair-note{border-top:1px solid var(--line);margin-top:22px;padding-top:15px}
+#import .account-repair-note p{font-size:13px;line-height:1.6;margin:0 0 12px}
+#import .account-repair-note button{margin:2px 9px 6px 0}
+#import #readerStatus{display:block;line-height:1.5;margin:4px 0}
+#import .activity-area{max-width:860px;margin-left:auto;margin-right:auto}
+#import #repairProgressPanel{border-top:3px solid var(--repair-border)}
+#import #stopReindex{margin-top:12px}
