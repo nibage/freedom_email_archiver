@@ -95,6 +95,8 @@ async function refresh(root,{signal,onProgress=()=>{},write=false,lockTimeoutMs=
   for await(const source of g.ArchiveReindex.scan(root)){
    if(signal?.aborted){stats.interrupted=true;break;}
    stats.scanned++;
+   stats.phase='reading';
+   if(stats.scanned<=5||stats.scanned%10===0)notify();
    try{
     const file=await source.handle.getFile();
     if(file.size>128*1024*1024){stats.unsupported++;continue;}
@@ -103,8 +105,10 @@ async function refresh(root,{signal,onProgress=()=>{},write=false,lockTimeoutMs=
      stats.eligible++;
      if(write){
       if(signal?.aborted){stats.interrupted=true;break;}
+      stats.phase='writing';notify();
       await C.write(root,source.path,result.html);
       stats.updated++;
+      stats.phase='reading';
      }
     }else if(result.status==='current')stats.current++;
     else stats.unsupported++;
