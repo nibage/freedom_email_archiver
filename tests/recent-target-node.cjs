@@ -51,10 +51,10 @@ const C={VIEWER_DIR:'__email_archiver/',MANIFEST:'__email_archiver/assets/catalo
  async write(root,p){stages.push('viewer-install:'+p);},json:JSON.stringify,empty(){return viewerManifest;},
  Importer:class{async run(files,account){stages.push('mbox:'+account);return {interrupted:false,issues:[]};}},
  fold:s=>String(s||'').toLowerCase()};
-const ArchiveReindex={async syncMissing(root,{onProgress}){
- scanned.push(root);onProgress({scanned:7,skipped:6,indexed:1});
- return {scanned:7,skipped:6,indexed:1,committed:true,interrupted:false};
-}};
+const ArchiveReindex={
+ async checkMissing(root,{onProgress}){stages.push('read-only-catalog-check');const result={scanned:7,indexed:6,missing:1,damaged:false,interrupted:false};onProgress(result);return result;},
+ async syncMissing(root,{onProgress}){scanned.push(root);onProgress({scanned:7,skipped:6,indexed:1});return {scanned:7,skipped:6,indexed:1,committed:true,interrupted:false};}
+};
 const ArchiveReaderUpgrade={async refresh(root,{write=false,onProgress=()=>{}}){
  stages.push(write?'existing-update':'existing-check');
  const data={scanned:4,total:write?4:null,eligible:1,updated:write?1:0,current:3,unsupported:0,errors:0,interrupted:false};
@@ -82,12 +82,12 @@ async function main(){
  el('importTab').onclick();assert.equal(el('browse').hidden,true);
  el('browseTab').onclick();assertLink();
  await el('chooseDir').onclick();
- assert.equal(scanned.length,1,'Explicit folder choice starts incremental catalog check');
- assert.equal(scanned[0],b);
+ assert.equal(scanned.length,0,'Selecting a folder must not scan or rewrite the catalog');
  assert.equal(window.ArchiveUI.root,b);
  assert.equal(lastPicker.startIn,a);
  assert(!html.includes('id="repairProgressPanel"'),'Catalog has no separate progress card.');
- assert.match(el('catalogStatus').textContent,/Added 1 missing catalog entries/,'Catalog result appears inline under import actions.');
+ await tick();
+ assert.match(el('catalogStatus').textContent,/Archive selected/,'Root selection displays a lightweight manifest summary.');
  assert.equal(el('importAccountSelect').value,'work');
  el('importAccountSelect').value='__new__';
  el('importAccountSelect').listeners.change();
@@ -98,6 +98,9 @@ async function main(){
  // Check existing stays in the action row and puts its result just underneath.
  await el('previewReaders').onclick();
  assert.match(el('readerStatus').textContent,/4 HTML messages checked · 1 older viewers eligible/);
+ assert.equal(stages[0],'read-only-catalog-check','Deep catalog inventory runs on Check existing, not root selection');
+ assert.match(el('catalogStatus').textContent,/1 unindexed saved HTML/);
+ assert.equal(scanned.length,0,'Check existing must not trigger catalog writes');
  assert.equal(el('existingProgressPanel').hidden,true,'Read-only check must not open the write-progress panel');
  await el('upgradeReaders').onclick();
  assert.match(el('existingProgressTitle').textContent,/Existing-email update complete/);
