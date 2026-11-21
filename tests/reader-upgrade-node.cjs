@@ -26,6 +26,12 @@ const oldPage=page.replace('<script>'+currentScript+'</script>','<script>'+older
  .replace('sha256-'+latestHash,'sha256-'+olderHash).replace('"renderVersion":2','"renderVersion":1');
 const makePageFor=id=>globals.MailRenderer.documentHTML({...meta,id,path:folder+'/email-'+id+'.html'},body,[],'../../../__email_archiver/');
 const currentPageB=makePageFor('b'.repeat(64));
+const plainId='d'.repeat(64),plainPath=folder+'/email-'+plainId+'.html';
+const oldPlain=makePageFor(plainId).replace('<script>'+currentScript+'</script>','')
+ .replace('a{color:var(--accent)}','a{color:#0d6b67}')
+ .replace('id="backToArchive" ','').replace('← Back to archive','← Email Archive');
+const plainSource={account:'personal',folder,id:plainId,path:plainPath,
+ handle:{async getFile(){return {size:oldPlain.length,async text(){return oldPlain;}}}}};
 const unknownPageC=makePageFor('c'.repeat(64)).replace(currentScript,'alert(1)');
 const pages=new Map([[messagePath,oldPage],[folder+'/email-'+'b'.repeat(64)+'.html',currentPageB],
  [folder+'/email-'+'c'.repeat(64)+'.html',unknownPageC]]);
@@ -51,6 +57,7 @@ globals.ArchiveReindex={
 const upgrader=fs.readFileSync(path.join(rootDir,'assets/reader-upgrade.js'),'utf8');
 vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEncoder,btoa:bytes=>Buffer.from(bytes,'binary').toString('base64'),setTimeout},{filename:'assets/reader-upgrade.js'});
 (async()=>{
+ assert.equal((await globals.ArchiveReaderUpgrade.evaluate(plainSource,'__email_archiver/')).status,'eligible','Recognized old pages without image scripts must also be theme-upgradable');
  const preview=await globals.ArchiveReaderUpgrade.refresh({}, {});
  assert.equal(preview.scanned,3);assert.equal(preview.eligible,1);assert.equal(preview.current,1);assert.equal(preview.unsupported,1);
  assert.equal(writes.length,0,'Preview must never change saved HTML');
