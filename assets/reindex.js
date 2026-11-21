@@ -81,9 +81,9 @@ function fromHtml(html,source){
  return {record:{...r,attachments},text:C.fold(text),legacy};
 }
 async function inspect(source){return fromHtml(await (await source.handle.getFile()).text(),source);}
-async function rebuild(root,{signal,onProgress=()=>{},batchSize=100}={}){
- const lock=new C.Importer(root);
- await lock.lock();
+async function rebuild(root,{signal,onProgress=()=>{},batchSize=100,lockHeld=false}={}){
+ const lock=lockHeld?null:new C.Importer(root);
+ if(lock)await lock.lock();
  const stats={scanned:0,indexed:0,legacyRecovered:0,duplicates:0,errors:0,brokenAttachments:0,missingOriginals:0,segments:0,committed:false};
  const notify=()=>onProgress({...stats});
  try{
@@ -135,7 +135,90 @@ async function rebuild(root,{signal,onProgress=()=>{},batchSize=100}={}){
    await C.write(root,paths.current,C.wrap(next));
   stats.committed=true;notify();
   return {...stats,interrupted:false};
+ }finally{if(lock?.lockWriter)await lock.lockWriter.close();}
+}
+
+/* Add only orphan HTML pages to a healthy catalog. Existing metadata/search shards
+   are never rewritten, and a manifest is published only after every new page validates.
+   If existing shards are damaged, fall back to the strict full HTML reconstruction. */
+async function syncMissing(root,{signal,onProgress=()=>{},batchSize=100}={}){
+ const lock=new C.Importer(root);
+ await lock.lock();
+ const stats={scanned:0,skipped:0,indexed:0,legacyRecovered:0,errors:0,duplicates:0,segments:0,accounts:0,committed:false,interrupted:false,fullRebuild:false};
+ const notify=()=>onProgress({...stats});
+ try{
+  let old=null,indexed=new Map(),badShards=false;
+  try{
+   old=await C.manifest(root);
+   for(const shard of old.segments){
+    if(signal?.aborted){stats.interrupted=true;notify();return stats;}
+    if(shard.search&&!await C.exists(root,shard.search)){badShards=true;break;}
+    const data=C.unwrap(await C.read(root,shard.meta));
+    if(data.kind!=='metadata'||!Array.isArray(data.records))throw Error('CATALOG');
+    for(const record of data.records){
+     const key=record.account+'/'+record.id;
+     if(!record.path||indexed.has(key)&&indexed.get(key)!==record.path)throw Error('CATALOG_CONFLICT');
+     indexed.set(key,record.path);
+    }
+   }
+  }catch{badShards=true;}
+  if(badShards){
+   stats.fullRebuild=true;
+   // Strict fallback keeps the last good manifest until every HTML page passes validation.
+   // The caller already holds the exclusive writer lock.
+   return await rebuild(root,{signal,onProgress:d=>onProgress({...d,fullRebuild:true,skipped:0}),batchSize,lockHeld:true});
+  }
+  const seen=new Set(),segments=[],accounts=new Set(old.accounts||[]),batch=[],search=[];
+  const token=crypto.randomUUID();
+  let bucket=null;
+  const flush=async()=>{
+   if(!batch.length)return;
+   const base=bucket+'/catalog/incremental-'+token+'-'+String(segments.length).padStart(5,'0');
+   const meta=base+'.js',textFile=base+'-text.js';
+   await C.write(root,textFile,C.wrap({kind:'search',records:search}));
+   await C.write(root,meta,C.wrap({kind:'metadata',records:batch}));
+   segments.push({meta,search:textFile,count:batch.length});
+   stats.segments++;batch.length=0;search.length=0;notify();
+  };
+  for await(const source of scan(root)){
+   if(signal?.aborted){stats.interrupted=true;break;}
+   stats.scanned++;
+   const key=source.account+'/'+source.id;
+   if(seen.has(key)){stats.duplicates++;continue;}
+   seen.add(key);
+   if(indexed.has(key)){
+    if(indexed.get(key)!==source.path){stats.errors++;break;}
+    stats.skipped++;
+   }else{
+    try{
+     if(bucket!==null&&bucket!==source.account)await flush();
+     bucket=source.account;
+     const item=await inspect(source);
+     batch.push(item.record);search.push({key,text:item.text});
+     accounts.add(source.account);stats.indexed++;
+     if(item.legacy)stats.legacyRecovered++;
+     if(batch.length>=batchSize)await flush();
+    }catch{stats.errors++;}
+   }
+   if(stats.scanned%100===0){notify();await new Promise(r=>setTimeout(r,0));}
+  }
+  if(stats.interrupted){notify();return stats;}
+  if(stats.errors||stats.duplicates){
+   const error=Error('REINDEX_INCOMPLETE');
+   error.details={...stats,previousCatalog:!!old.segments.length};
+   throw error;
+  }
+  if(!stats.indexed){stats.accounts=accounts.size;notify();return stats;}
+  await flush();
+  const next={...old,generation:(old.generation||0)+1,
+   updated:new Date().toISOString(),accounts:[...accounts].sort(),
+   total:indexed.size+stats.indexed,segments:[...old.segments,...segments]};
+  // Preserve the old manifest and existing segments; no saved HTML is rewritten.
+  const paths=await C.catalogPaths(root);
+  await C.write(root,paths.previous,C.wrap(old));
+  await C.write(root,paths.current,C.wrap(next));
+  stats.committed=true;stats.accounts=accounts.size;notify();return stats;
  }finally{if(lock.lockWriter)await lock.lockWriter.close();}
 }
-g.ArchiveReindex={scan,fromHtml,inspect,rebuild,safeAttachmentHref};
+g.ArchiveReindex={scan,fromHtml,inspect,rebuild,syncMissing,safeAttachmentHref};
 })(globalThis);
