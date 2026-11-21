@@ -24,9 +24,11 @@ const body='<div class="mail-content"><p style="color:red">Original message pres
 const page=globals.MailRenderer.documentHTML(meta,body,[],'../../../__email_archiver/');
 const oldPage=page.replace('<script>'+currentScript+'</script>','<script>'+olderScript+'</script>')
  .replace('sha256-'+latestHash,'sha256-'+olderHash).replace('"renderVersion":2','"renderVersion":1');
-const unknown=oldPage.replace(olderScript,'alert(1)');
-const pages=new Map([[messagePath,oldPage],[folder+'/email-'+'b'.repeat(64)+'.html',page],
- [folder+'/email-'+'c'.repeat(64)+'.html',unknown]]);
+const makePageFor=id=>globals.MailRenderer.documentHTML({...meta,id,path:folder+'/email-'+id+'.html'},body,[],'../../../__email_archiver/');
+const currentPageB=makePageFor('b'.repeat(64));
+const unknownPageC=makePageFor('c'.repeat(64)).replace(currentScript,'alert(1)');
+const pages=new Map([[messagePath,oldPage],[folder+'/email-'+'b'.repeat(64)+'.html',currentPageB],
+ [folder+'/email-'+'c'.repeat(64)+'.html',unknownPageC]]);
 const files=[...pages.keys()].map(p=>({account:'personal',folder,id:path.basename(p).slice(6,70),path:p,
  handle:{async getFile(){return {size:pages.get(p).length,async text(){return pages.get(p);}}}}}));
 const writes=[];
