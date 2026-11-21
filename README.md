@@ -20,7 +20,7 @@ Example: selecting an empty archive root named `MyMail` and entering `personal` 
 ## Import and update
 
 1. Use desktop Chrome or Edge with the File System Access API.
-2. Choose an account folder, choose the archive root, then select one or more MBOX files. Thunderbird files without an extension are accepted. Extract Takeout ZIP files first.
+2. Choose the **Import folder root** first, enter the **Email account folder inside the archive**, then select one or more MBOX files. Thunderbird files without an extension are accepted. Extract Takeout ZIP files first.
 3. Check free disk space yourself, then start the import and keep the tab open.
 4. Open `__email_archiver/index.html` in a new destination when finished, or the existing root-level `index.html` for a legacy archive. Selecting a root in the importer also refreshes the visible account counts, but individual messages should be opened from the destination viewer.
 
@@ -32,13 +32,13 @@ Use Stop to commit the current batch. After a crash, reimport the source from th
 
 New imports automatically generate self-contained HTML messages with the current image loading and navigation controls. The experimental **Update saved email reader controls** section has been removed from the interface. If older saved emails lack these features, reimport the original MBOX into the same account on a backed-up archive; their saved HTML is now refreshed automatically. Rebuilding the search catalog alone does **not** change HTML reader scripts.
 
-The import form is followed immediately by an **activity panel** for import progress or catalog-repair progress. The next section below it is **Rebuild the catalog**. The Browse filters use four equal-width columns: Search spans two, From/To dates have matching smaller sizes, and **Clear filters** is a normal button.
+The single-column centered Import workspace selects the archive root before the account name; it shows a short selected-folder label (full absolute filesystem paths are unavailable through the browser picker). EML checkboxes and their labels are on one line. The import form is followed by the **activity panel**, a concise **Rebuild an existing archive** section, and a separate **Safe incremental import** information section near the bottom. The Browse filters use four equal-width columns: Search spans two, From/To dates have matching smaller sizes, and **Clear filters** is a normal button.
 
 ## Light and dark interface themes
 
-Use the **Dark mode / Light mode** switch in the top-right header of the offline archive. Light mode follows the brick-red and soft-grey palette; dark mode uses charcoal panels and an amber/orange accent. The selected mode is kept in the browser's local storage when available, so opening the same archive again retains your choice. If the browser disables local storage, the switch still works for the currently open page. The offline Guide follows the same setting.
+Use the **Dark mode / Light mode** switch in the top-right header of the offline archive. Light mode uses a muted deep-burgundy and soft-grey palette; dark mode uses charcoal panels and an amber/orange accent. The selected mode is kept in the browser's local storage when available, so opening the same archive again retains your choice. If the browser disables local storage, the switch still works for the currently open page. The offline Guide follows the same setting.
 
-The theme changes **only the archive application and its Guide**, not the original HTML contents of saved emails. This is deliberate: the archived messages retain their own fonts, colors and formatting so they remain human-readable without any special program. No email content, attachments, search catalog, or archive directory structure is modified when switching themes.
+The viewer, Guide, and **outer shell of newly generated standalone email pages** follow the light/dark theme, including the Back link. The email body itself remains on a neutral white reading surface to preserve the original sender styling. Links opened from Browse carry an explicit `?theme=dark|light` preference; a directly opened page can also read the saved local theme when browser storage allows. **Existing email HTML pages won't gain the new shell merely by replacing application files.** Their headers/scripts are saved inside each message, so they must be regenerated from the original MBOX (the renderer version is incremented for future reimports). No email attachments or catalogs are modified by using the theme toggle.
 
 ## Reading preferences and navigation
 
