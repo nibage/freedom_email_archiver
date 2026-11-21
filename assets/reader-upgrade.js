@@ -13,10 +13,17 @@ async function evaluate(source,viewerDir){
  if(!text.startsWith('<!doctype html><html lang="en">')||!text.includes('id="mail-archive-record"'))return {status:'unsupported'};
  const active=[...text.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)]
   .filter(m=>!/\btype\s*=\s*["']application\/json["']/i.test(m[1]));
- if(active.length!==1)return {status:'unsupported'};
- const script=active[0][2],hashBytes=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(script)));
- const hash=btoa(String.fromCharCode(...hashBytes));
- if(!knownHashes.has(hash)||!text.includes('script-src &#39;sha256-'+hash+'&#39;'))return {status:'unsupported'};
+ // Older generated pages without external images did not always include an active reader script.
+ // Only allow that form if its known legacy CSS and Back link are present.
+ const plainLegacy=active.length===0&&text.includes('a{color:#0d6b67}')&&
+  text.includes('<header><a href=')&&text.includes('← Email Archive');
+ if(active.length!==1&&!plainLegacy)return {status:'unsupported'};
+ let hash=null;
+ if(active.length){
+  const bytes=new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(active[0][2])));
+  hash=btoa(String.fromCharCode(...bytes));
+  if(!knownHashes.has(hash)||!text.includes('script-src &#39;sha256-'+hash+'&#39;'))return {status:'unsupported'};
+ }
  const main=text.indexOf('<main>'),end=text.indexOf('</main>',main+6);
  if(main<0||end<0||text.indexOf('<main>',main+1)!==-1)return {status:'unsupported'};
  const parsed=g.ArchiveReindex.fromHtml(text,source);
