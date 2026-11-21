@@ -28,7 +28,7 @@ const C={
  async manifest(){return manifest;},empty(){return {kind:'manifest',format:1,generation:0,accounts:[],segments:[],total:0};},
  async catalogPaths(){return {viewerDir:'__email_archiver/',current:prefix+'archive.js',previous:prefix+'archive.previous.js'};},
  async read(root,path){if(!values.has(path))throw Error('Not found');return values.get(path);},
- async write(root,path,val){writes.push(path);values.set(path,val);if(path===prefix+'archive.js')manifest=val;},
+ async write(root,path,val){const snapshot=structuredClone(val);writes.push(path);values.set(path,snapshot);if(path===prefix+'archive.js')manifest=snapshot;},
  async exists(root,path){return values.has(path);},
  unwrap:x=>x,wrap:x=>x,fold:x=>String(x||'').toLowerCase()
 };
