@@ -114,6 +114,17 @@ vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEnc
   const unchanged=await globals.ArchiveReaderUpgrade.refresh({}, {write:true});
   assert.equal(unchanged.updated,0);
   assert.equal(unnecessary,0,'A no-change run should not open any write lock or trigger Defender writes');
+  // A protected destination may reject write access. Don't retry across every
+  // saved email and repeatedly provoke Windows Defender notifications.
+  pages.set(messagePath,oldPage);
+  let blockedAttempts=0;
+  C.Importer=class{async lock(){blockedAttempts++;throw Error('LOCKED');}};
+  await assert.rejects(
+   ()=>globals.ArchiveReaderUpgrade.refresh({},{write:true}),
+   e=>e.message==='LOCKED');
+  assert.equal(blockedAttempts,1,'Blocked writer must stop on the first attempt');
+  assert.deepEqual(writes,[messagePath],'Blocked writers must not modify saved mail');
+  pages.set(messagePath,after);
  }finally{C.Importer=OriginalImporter;}
 
  console.log('PASS: old email navigation shell updated without MBOX, body unchanged');
