@@ -66,6 +66,9 @@ async function main(){
  let report=await new C.Importer(root).run([mbox()],'personal');
  assert.equal(report.stats.new,1);
  assert.equal(sanitized,1);
+ assert.equal(await C.exists(root,'catalog/archive.js'),true,'New archives must store catalog inside data-only catalog/.');
+ assert.equal(await C.exists(root,'index.html'),false,'Importer must not install a root application or launcher.');
+ assert.equal(await C.exists(root,'__email_archiver/index.html'),false,'Importer must not copy the application to data root.');
  const record=[...(await new C.Importer(root).open()).records.values()][0];
  const path=record.path,writesAfterFirst=writes.get(path);
  sanitized=0;report=await new C.Importer(root).run([mbox()],'personal');
@@ -87,6 +90,7 @@ async function main(){
  sanitized=0;report=await new C.Importer(root).run([mbox()],'personal');
  assert.equal(report.stats.refreshed,0);
  assert.equal(sanitized,0,'upgraded renderer must be reused on next reimport');
+ console.log('PASS data-only imports create catalogs but never install application files');
  console.log('PASS duplicate reimport skips HTML rendering and disk writes');
  console.log('PASS label-only update reuses existing HTML body');
  console.log('PASS outdated renderer is refreshed exactly once');
