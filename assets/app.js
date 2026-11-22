@@ -220,8 +220,10 @@ async function bindParent(parent,{create=false}={}){
  try{await readCatalog();}
  catch(e){browseNotice('The current archive index needs repair: '+errorText(e));}
  await loadRootAccounts(data);
- $('accessStatus').textContent='Archive folder connected: /'+parent.name+
-  '/archived_emails/. Import and Check existing now use this folder without choosing it again.';
+ const canWrite=await permissionGranted(parent,'readwrite');
+ $('accessStatus').textContent=canWrite
+  ?'Archive access ready: /'+parent.name+'/archived_emails/. Import and Check existing will not ask for a folder.'
+  :'Read access restored for archived_emails/. Click Enable archive access to permit importing and rebuilding.';
  return data;
 }
 async function ensureArchive({write=false}={}){
@@ -272,7 +274,7 @@ async function loadRecent(){
    try{permitted=typeof handle.queryPermission!=='function'||
      await handle.queryPermission({mode:'read'})==='granted';}catch{}
    if(permitted&&!root){
-    try{await bindParent(handle);$('connectArchive').textContent='Renew archive access';}
+    try{await bindParent(handle);if(await permissionGranted(handle,'readwrite'))$('connectArchive').textContent='Renew archive access';}
     catch{/* No permission prompt and no automatic creation. */}
    }
   }
