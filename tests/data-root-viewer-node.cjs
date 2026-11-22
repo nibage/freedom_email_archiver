@@ -77,10 +77,12 @@ vm.runInNewContext(code,{globalThis:runtime,DOMParser:DOMParserMock,URL:URLmock,
  assert.match(last.original.getAttribute('href'),/^blob:fixture-/,'Stored EML is available');
  assert.equal(last.unsafe.getAttribute('href'),null,'javascript: links are removed');
  assert.match(last.policy.getAttribute('content'),/script-src 'none'/);
+ assert(!last.policy.getAttribute('content').includes('http:'),'Manual image mode blocks all remote resource URLs via CSP.');
  assert.equal(current.url,'blob:fixture-4');
  current.dispose();assert.equal(revoked.length,4,'All local object URLs are cleaned on exit');
  const auto=await runtime.ArchiveDataReader.open(rootHandle,record,{theme:'light',autoImages:true});
  assert.equal(last.remote.getAttribute('src'),'https://example.invalid/tracker','Explicit image preference respected');
+ assert(last.policy.getAttribute('content').includes('https: http:'),'Auto images permits remote requests only with active preference.');
  assert.equal(last.root.theme,'light');
  auto.dispose();
  last.metadata.textContent=JSON.stringify({schema:1,record:{...record,path:'../../not-the-selected-record'}});
