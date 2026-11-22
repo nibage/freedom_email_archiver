@@ -158,3 +158,9 @@ footer{justify-content:flex-end}
  border:1px solid var(--line);border-top:0;border-radius:0 0 10px 10px;
  background:var(--surface)}
 @media(max-width:760px){#messageFrame{height:74vh;min-height:420px}}
+
+/* Archive permissions are requested explicitly, not by Import/Check actions. */
+.archive-access{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0 18px}
+.archive-access button{flex:0 0 auto}
+.archive-access .data-root-description{margin:0;flex:1;min-width:230px}
+@media(max-width:600px){.archive-access{align-items:stretch}.archive-access button{width:100%}}
