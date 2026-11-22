@@ -524,15 +524,31 @@ $('upgradeReaders').onclick=async()=>{
  readerBusy=true;readerController=new AbortController();readerControls(true);
  $('stopReaders').hidden=false;
  try{
-  $('readerStatus').textContent='Rebuilding missing indexes from saved HTML…';
-  const recovered=await runCatalogSync(target,{signal:readerController.signal,force:true});
-  if(recovered?.interrupted||readerController.signal.aborted)return;
+  $('readerStatus').textContent='Refreshing eligible saved HTML viewers…';
   const result=await runExistingUpgrade(target,readerController.signal,'Reimporting only existing saved HTML emails');
   readerPreview=0;
-  if(result.errors)$('readerStatus').textContent='Some saved HTML pages could not be updated. Check the result below.';
-  else if(result.interrupted)$('readerStatus').textContent='Existing-email update stopped. Run Check existing to see what remains.';
-  else $('readerStatus').textContent='Existing-only recovery complete. Catalog and eligible old viewers are updated.';
-  if(!result.interrupted){await readCatalog();await loadRootAccounts(target);}
+  if(result.interrupted||readerController.signal.aborted){
+   $('readerStatus').textContent='Existing-email refresh stopped; catalog rebuild was not started.';
+   return;
+  }
+  $('catalogStatus').textContent='Rebuilding the full index from archived_emails/ (including manually merged folders)…';
+  const indexed=await ArchiveReindex.rebuild(target,{
+   signal:readerController.signal,
+   onProgress:v=>{
+    $('catalogStatus').textContent='Reindexing archived_emails/: '+(v.scanned||0)+
+     ' HTML checked · '+(v.indexed||0)+' indexed · '+(v.errors||0)+' errors';
+   }
+  });
+  if(indexed.interrupted||readerController.signal.aborted){
+   $('readerStatus').textContent='Reindex stopped; the previous catalog was preserved.';
+   return;
+  }
+  $('catalogStatus').textContent='Rebuilt catalog from '+indexed.indexed+
+   ' saved messages. Removed stale entries; no HTML messages or attachments deleted.';
+  $('readerStatus').textContent=result.errors
+   ?'Catalog rebuilt. Some older HTML viewer shells could not be updated: '+result.errors+' errors.'
+   :'Existing-only recovery complete: '+result.updated+' HTML viewers refreshed and '+indexed.indexed+' messages indexed.';
+  await readCatalog();await loadRootAccounts(target);
  }catch(e){$('readerStatus').textContent='Reimport only existing failed: '+errorText(e);}
  finally{readerBusy=false;$('stopReaders').hidden=true;readerControls(false);}
 };
