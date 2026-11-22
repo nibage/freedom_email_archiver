@@ -125,7 +125,7 @@ function tab(which){
 }
 $('browseTab').onclick=()=>tab('browse');
 $('importTab').onclick=()=>tab('import');
-function ready(){$('start').disabled=busy||repairBusy||readerBusy||rootUnsafe||rootProbing||!root||!$('files').files.length;}
+function ready(){$('start').disabled=busy||repairBusy||readerBusy||rootUnsafe||rootProbing||!rootAccountsResolved||!root||!$('files').files.length;}
 // Each opened index.html has its own remembered root/account. No global "last" folder.
 const viewerKey=location.pathname;
 const folderPreference='self-root:'+viewerKey,accountPreference='account:'+viewerKey;
@@ -323,7 +323,7 @@ $('start').onclick=async()=>{
  let acc;
  try{acc=selectedAccount();}catch(e){showError(e);return;}
  const target=root,sourceFiles=Array.from($('files').files);
- if(!target||rootUnsafe||rootProbing||!sourceFiles.length)return;
+ if(!target||rootUnsafe||rootProbing||!rootAccountsResolved||!sourceFiles.length)return;
  // Permissions remain strictly user-gesture based; this button authorizes the pre-import update.
  try{await allowRoot(target);}catch(e){showError(e);return;}
  preferredAccount=acc;void rememberAccount(acc);
