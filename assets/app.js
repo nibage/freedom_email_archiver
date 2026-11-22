@@ -30,27 +30,94 @@ function load(src){const p=chain.then(()=>loadScript(localUrl(src)));chain=p.cat
 function notice(s){$('operationNotice').textContent=s;$('operationNotice').hidden=!s;}
 function browseNotice(s){$('notice').textContent=s;$('notice').hidden=!s;}
 function options(id,items,first){const el=$(id),old=el.value;el.replaceChildren(new Option(first,''));for(const s of items)el.add(new Option(s,s));if(items.includes(old))el.value=old;}
+async function loadArchiveSegment(path,selectedRoot){
+ // Mounted data roots are read through the selected File System Access handle.
+ // The application never loads their catalogs by script tag or from its own folder.
+ return selectedRoot?C.unwrap(await C.read(selectedRoot,path)):load(path);
+}
 async function readCatalog(){
- let last;catalog=null;
- for(const src of [C.MANIFEST,C.PREVIOUS,'assets/catalog/archive.js','assets/catalog/archive.previous.js','archive.js','archive.previous.js']){
-  try{const result=await load(src+'?g='+Date.now());if(result?.format!==C.VERSION)throw Error('FORMAT');catalog=result;break;}catch(e){last=e;}
+ const selectedRoot=root,revision=selectionVersion;
+ let nextCatalog,last;
+ if(selectedRoot){
+  nextCatalog=await C.manifest(selectedRoot);
+  if(nextCatalog?.format!==C.VERSION)throw Error('FORMAT');
+ }else{
+  // A standalone checked-out demo can still show its fictional fixtures.
+  for(const src of [C.MANIFEST,C.PREVIOUS,'assets/catalog/archive.js',
+   'assets/catalog/archive.previous.js','archive.js','archive.previous.js']){
+   try{const result=await load(src+'?g='+Date.now());if(result?.format!==C.VERSION)throw Error('FORMAT');
+    nextCatalog=result;break;}catch(e){last=e;}
+  }
+  if(!nextCatalog)nextCatalog=C.empty();
  }
- if(!catalog)throw last||Error('CATALOG');
- records.clear();cache.clear();for(const seg of catalog.segments){const m=await load(seg.meta);for(const r of m.records)records.set(r.account+'/'+r.id,r);}all=[...records.values()].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||a.id.localeCompare(b.id));options('accountFilter',catalog.accounts,'All accounts');options('labelFilter',[...new Set(all.flatMap(r=>r.labels))].sort(),'All labels');if(root)void loadRootAccounts(root);
+ const found=new Map();
+ for(const seg of nextCatalog.segments){
+  const m=await loadArchiveSegment(seg.meta,selectedRoot);
+  if(m.kind!=='metadata'||!Array.isArray(m.records))throw Error('CATALOG');
+  for(const r of m.records)found.set(r.account+'/'+r.id,r);
+ }
+ if(root!==selectedRoot||revision!==selectionVersion)return;
+ queryVersion++;catalog=nextCatalog;
+ records=found;cache.clear();
+ all=[...records.values()].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||a.id.localeCompare(b.id));
+ options('accountFilter',catalog.accounts,'All accounts');
+ options('labelFilter',[...new Set(all.flatMap(r=>r.labels))].sort(),'All labels');
  if(remembered&&remembered.values&&Number.isFinite(remembered.when)&&Date.now()-remembered.when<=30*60*1000){
   for(const [id,value] of Object.entries(remembered.values)){
    if(['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter','pageSize'].includes(id)&&typeof value==='string')$(id).value=value;
   }
  }
+ $('activeRootInfo').textContent=selectedRoot
+  ?'Active data folder: /'+selectedRoot.name+'/ · '+all.length.toLocaleString('en-GB')+' indexed messages'
+  :'Local demo archive · '+all.length.toLocaleString('en-GB')+' fictional messages';
  await search();restoreReturnPosition();
 }
 function metadataText(r){return C.fold([r.subject,r.from,r.to,r.cc,r.bcc].join(' '));}
 async function search(){const v=++queryVersion;currentPage=0;const terms=C.fold($('query').value).split(/\s+/).filter(Boolean);const acc=$('accountFilter').value,lab=$('labelFilter').value,from=$('dateFrom').value,to=$('dateTo').value,attach=$('attachmentFilter').value;const candidates=all.filter(r=>(!acc||r.account===acc)&&(!lab||r.labels.includes(lab))&&(!from||r.day&&r.day>=from)&&(!to||r.day&&r.day<=to)&&(!attach||(attach==='yes')===!!r.attachments.length));
  if(!terms.length){matches=candidates;render();return;}const wanted=new Map(),found=new Set();for(const r of candidates){const key=r.account+'/'+r.id,meta=metadataText(r);if(terms.every(t=>meta.includes(t)))found.add(key);else wanted.set(key,meta);}
- $('resultInfo').textContent='Searching local text indexes…';let done=0;for(const seg of catalog.segments){if(v!==queryVersion)return;if(!seg.search)continue;let data=cache.get(seg.search);if(!data){data=await load(seg.search);cache.set(seg.search,data);if(cache.size>4)cache.delete(cache.keys().next().value);}for(const x of data.records){const meta=wanted.get(x.key);if(meta!==undefined){const hay=meta+' '+C.fold(x.text);if(terms.every(t=>hay.includes(t)))found.add(x.key);}}done++;if(done%5===0){$('resultInfo').textContent='Searched '+done+' indexes…';await new Promise(r=>setTimeout(r,0));}}
+ $('resultInfo').textContent='Searching local text indexes…';let done=0;for(const seg of catalog.segments){if(v!==queryVersion)return;if(!seg.search)continue;let data=cache.get(seg.search);if(!data){data=await loadArchiveSegment(seg.search,root);cache.set(seg.search,data);if(cache.size>4)cache.delete(cache.keys().next().value);}for(const x of data.records){const meta=wanted.get(x.key);if(meta!==undefined){const hay=meta+' '+C.fold(x.text);if(terms.every(t=>hay.includes(t)))found.add(x.key);}}done++;if(done%5===0){$('resultInfo').textContent='Searched '+done+' indexes…';await new Promise(r=>setTimeout(r,0));}}
  if(v!==queryVersion)return;matches=candidates.filter(r=>found.has(r.account+'/'+r.id));render();}
-function render(){const size=+$('pageSize').value,pages=Math.max(1,Math.ceil(matches.length/size));currentPage=Math.min(currentPage,pages-1);$('rows').replaceChildren();for(const r of matches.slice(currentPage*size,(currentPage+1)*size)){const tr=document.createElement('tr');const tdDate=document.createElement('td');tdDate.className='date';tdDate.textContent=r.date?new Date(r.date).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Unknown date';const tdAddr=document.createElement('td');tdAddr.textContent=r.from||'(Not specified)';const to=document.createElement('span');to.className='address';to.textContent='To: '+(r.to||'—');tdAddr.append(to);const tdSub=document.createElement('td');const a=document.createElement('a');a.className='subject';a.textContent=r.subject||'(No subject)';a.href=localUrl(r.path.split('/').map(encodeURIComponent).join('/'))+'?fromArchive=1&images='+($('autoImages').checked?'auto':'manual')+'&theme='+(document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light');a.target='_self';a.addEventListener('click',e=>{if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey)saveReturnPosition();});tdSub.append(a);for(const text of [r.account,...r.labels]){const s=document.createElement('span');s.className='badge';s.textContent=text;tdSub.append(s);}const tdAtt=document.createElement('td');tdAtt.textContent=(r.attachments.length?'⌕ '+r.attachments.length:'—')+(r.original?' · EML':'');tr.append(tdDate,tdAddr,tdSub,tdAtt);$('rows').append(tr);}$('empty').hidden=!!matches.length;$('resultInfo').textContent=matches.length.toLocaleString('en-GB')+' messages'+(matches.length!==all.length?' of '+all.length.toLocaleString('en-GB'):'');$('pageInfo').textContent=(currentPage+1)+' / '+pages;$('prev').disabled=currentPage===0;$('next').disabled=currentPage>=pages-1;}
-let timer;for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>search().catch(showBrowseError),200);});window.addEventListener('archive-theme-change',render);$('pageSize').onchange=render;$('prev').onclick=()=>{currentPage--;render();};$('next').onclick=()=>{currentPage++;render();};$('reset').onclick=()=>{for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).value='';search().catch(showBrowseError);};
+let openMessageRecord=null,messageResources=null,openedRoot=null,openedMessageVersion=0,savedBrowseScroll=0,messageImagesApproved=false;
+function closeMessage(){
+ openedMessageVersion++;
+ $('messageViewer').hidden=true;$('browseList').hidden=false;
+ $('messageFrame').removeAttribute('src');
+ requestAnimationFrame(()=>window.scrollTo(0,savedBrowseScroll));
+ $('loadMessageImages').hidden=true;
+ openMessageRecord=null;openedRoot=null;messageImagesApproved=false;
+ if(messageResources){messageResources.dispose();messageResources=null;}
+}
+async function showMessage(record,{loadExternal=false}={}){
+ if(!root)return;
+ if(!openMessageRecord)savedBrowseScroll=window.scrollY||0;
+ const chosenRoot=root,version=++openedMessageVersion;
+ const theme=document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light';
+ $('messageInfo').textContent='Opening saved email…';
+ $('messageViewer').hidden=false;$('browseList').hidden=true;
+ try{
+  const rendered=await ArchiveDataReader.open(chosenRoot,record,{
+   theme,autoImages:loadExternal||messageImagesApproved||$('autoImages').checked
+  });
+  if(root!==chosenRoot||version!==openedMessageVersion){rendered.dispose();return;}
+  const previous=messageResources;messageResources=rendered;
+  $('messageFrame').src=rendered.url;
+  if(previous)previous.dispose();
+  openMessageRecord=record;openedRoot=chosenRoot;
+  $('loadMessageImages').hidden=!rendered.hasRemoteImages||loadExternal||messageImagesApproved||$('autoImages').checked;
+  $('messageInfo').textContent=record.subject||'(No subject)';
+  window.scrollTo(0,0);
+ }catch(e){
+  closeMessage();
+  browseNotice('Could not open this saved message: '+(e.message||e.name)+'. No archive files were changed.');
+ }
+}
+$('closeMessage').onclick=()=>closeMessage();
+$('loadMessageImages').onclick=()=>{if(openMessageRecord&&root===openedRoot){messageImagesApproved=true;void showMessage(openMessageRecord,{loadExternal:true});}};
+function render(){const size=+$('pageSize').value,pages=Math.max(1,Math.ceil(matches.length/size));currentPage=Math.min(currentPage,pages-1);$('rows').replaceChildren();for(const r of matches.slice(currentPage*size,(currentPage+1)*size)){const tr=document.createElement('tr');const tdDate=document.createElement('td');tdDate.className='date';tdDate.textContent=r.date?new Date(r.date).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Unknown date';const tdAddr=document.createElement('td');tdAddr.textContent=r.from||'(Not specified)';const to=document.createElement('span');to.className='address';to.textContent='To: '+(r.to||'—');tdAddr.append(to);const tdSub=document.createElement('td');const a=document.createElement('a');a.className='subject';a.textContent=r.subject||'(No subject)';a.href=root?'#saved-email':localUrl(r.path.split('/').map(encodeURIComponent).join('/'))+'?fromArchive=1&images='+($('autoImages').checked?'auto':'manual')+'&theme='+(document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light');a.target='_self';a.addEventListener('click',e=>{
+ if(root){e.preventDefault();void showMessage(r);return;}
+ if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey)saveReturnPosition();
+});tdSub.append(a);for(const text of [r.account,...r.labels]){const s=document.createElement('span');s.className='badge';s.textContent=text;tdSub.append(s);}const tdAtt=document.createElement('td');tdAtt.textContent=(r.attachments.length?'⌕ '+r.attachments.length:'—')+(r.original?' · EML':'');tr.append(tdDate,tdAddr,tdSub,tdAtt);$('rows').append(tr);}$('empty').hidden=!!matches.length;$('resultInfo').textContent=matches.length.toLocaleString('en-GB')+' messages'+(matches.length!==all.length?' of '+all.length.toLocaleString('en-GB'):'');$('pageInfo').textContent=(currentPage+1)+' / '+pages;$('prev').disabled=currentPage===0;$('next').disabled=currentPage>=pages-1;}
+let timer;for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>search().catch(showBrowseError),200);});window.addEventListener('archive-theme-change',()=>{render();if(openMessageRecord&&root===openedRoot)void showMessage(openMessageRecord,{loadExternal:messageImagesApproved});});$('pageSize').onchange=render;$('prev').onclick=()=>{currentPage--;render();};$('next').onclick=()=>{currentPage++;render();};$('reset').onclick=()=>{for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).value='';search().catch(showBrowseError);};
 function tab(which){
  $('browse').hidden=which!=='browse';
  $('import').hidden=which!=='import';
@@ -58,13 +125,12 @@ function tab(which){
 }
 $('browseTab').onclick=()=>tab('browse');
 $('importTab').onclick=()=>tab('import');
-function ready(){$('start').disabled=busy||repairBusy||readerBusy||rootUnsafe||rootProbing||!root||!$('files').files.length;}
+function ready(){$('start').disabled=busy||repairBusy||readerBusy||rootUnsafe||rootProbing||!rootAccountsResolved||!root||!$('files').files.length;}
 // Each opened index.html has its own remembered root/account. No global "last" folder.
 const viewerKey=location.pathname;
 const folderPreference='self-root:'+viewerKey,accountPreference='account:'+viewerKey;
 const viewerParts=decodeURIComponent(viewerKey).split('/').filter(Boolean);
 const selfRootName=viewerParts[nestedViewer?viewerParts.length-3:viewerParts.length-2]||'archive';
-const selfViewerPath=selfRootName+'/'+(nestedViewer?'__email_archiver/':'')+'index.html';
 let recentRoot=null,selectionVersion=0,accountTouched=false,preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null,rootUnsafe=false,rootIsNew=false,rootHasAccounts=false,rootAccountsResolved=false,rootProbing=false;
 function recentDB(){
  return new Promise((resolve,reject)=>{
@@ -117,7 +183,7 @@ async function loadRootAccounts(handle){
   }
  }catch{
   // A remembered self handle without access may still use the viewer's known accounts.
-  if(handle.name===selfRootName)for(const a of catalog?.accounts||[])try{names.add(C.accountName(a));}catch{}
+  for(const a of catalog?.accounts||[])try{names.add(C.accountName(a));}catch{}
  }
  if(handle!==root||version!==selectionVersion)return;
  rootHasAccounts=names.size>0;rootAccountsResolved=true;
@@ -135,7 +201,7 @@ async function updateRootInfo(handle){
  // A browser directory handle exposes only its folder name, never the absolute path.
  // The label stays concise and never suggests that a root was authorized automatically.
  if(!handle){
-  $('dirInfo').textContent='Currently selected: none (open viewer: /'+selfRootName+'/)';
+  $('dirInfo').textContent='Currently selected: none';
   $('accountInfo').textContent='Choose an archive root to load existing accounts.';
   return;
  }
@@ -145,66 +211,46 @@ async function updateRootInfo(handle){
 }
 async function quickRootCheck(handle){
  const version=selectionVersion;
- const modern=await C.exists(handle,C.VIEWER_DIR+'index.html');
- const legacy=await C.exists(handle,'index.html');
- let oldKind='none';
- if(legacy){
-  const page=await C.read(handle,'index.html');
-  oldKind=page.includes('assets/core.js')?'archive':
-   page.includes('FREEDOM-ARCHIVE-LAUNCHER')?'launcher':'unrelated';
- }
+ const m=await C.manifest(handle);
  if(handle!==root||version!==selectionVersion)return;
- rootUnsafe=oldKind==='unrelated';rootProbing=false;
- rootIsNew=!modern&&!legacy;
- $('previewReaders').disabled=rootUnsafe||busy||repairBusy||readerBusy;
+ rootProbing=false;rootUnsafe=false;rootIsNew=!(m.segments?.length||m.total);
+ $('catalogStatus').textContent=m.total
+  ?'Data folder loaded · '+m.total+' indexed messages. Use Check existing for a deeper scan.'
+  :'Data folder loaded with no catalog entries. New imports write data and indexes here; no application files are copied.';
+ $('previewReaders').disabled=busy||repairBusy||readerBusy;
  $('upgradeReaders').disabled=true;
- $('rootSetup').hidden=false;
- $('rootOpenInfo').hidden=!(rootIsNew||modern||oldKind==='launcher');
- $('createArchive').hidden=!(rootIsNew||(modern&&!legacy)||(oldKind==='launcher'&&!modern));
- $('createArchive').disabled=busy||repairBusy||readerBusy||rootUnsafe;
- if(rootUnsafe){
-  $('rootSetupInfo').textContent='This folder already contains an unrelated index.html. Choose another folder; no files have been modified.';
-  $('catalogStatus').textContent='Archive selection rejected. Existing files will not be overwritten.';
- }else if(rootIsNew){
-  $('rootSetupInfo').textContent='No Email Archiver installed in /'+handle.name+'/. Create archive here or Start import will create __email_archiver/ and an index.html launcher in this root folder.';
-  $('catalogStatus').textContent='New destination selected. No catalog scan is necessary. Check existing can scan saved account folders if present.';
- }else if(oldKind==='launcher'&&!modern){
-  $('rootSetupInfo').textContent='A root launcher exists, but its __email_archiver/index.html is missing. Choose Create archive here to restore the application.';
-  $('catalogStatus').textContent='The archive viewer needs to be installed before browsing.';
- }else{
-  let count='unknown';
-  try{const m=await C.manifest(handle);count=String(m.total);}catch{count='unknown';}
-  if(handle!==root||version!==selectionVersion)return;
-  $('rootSetupInfo').textContent=modern
-   ?'Email Archiver found in /'+handle.name+'/. Check existing to verify saved HTML and catalog entries.'
-   :'Existing root-level archive found. It will be extended without replacing its index.html.';
-  $('catalogStatus').textContent='Archive selected · '+count+' messages indexed. Choose Check existing for a deeper inspection.';
- }
  ready();
+ await readCatalog();
 }
 function setRoot(handle,{recent=false}={}){
- root=handle;readerPreview=0;rootUnsafe=false;rootIsNew=false;rootHasAccounts=false;rootAccountsResolved=false;rootProbing=!!handle;
- $('rootSetup').hidden=!handle;
- $('createArchive').hidden=true;
- $('rootOpenInfo').hidden=true;
- $('rootSetupInfo').textContent=handle?'Checking archive entry files…':'';
- $('catalogStatus').textContent=handle?'Checking archive entry files (no catalog scan)…':'Choose an archive root to check saved catalog entries.';
+ // One application instance always has exactly one active data root.
+ closeMessage();
+ root=handle;readerPreview=0;rootUnsafe=false;rootIsNew=false;
+ rootHasAccounts=false;rootAccountsResolved=false;rootProbing=!!handle;
+ all=[];matches=[];records.clear();cache.clear();catalog=null;queryVersion++;
+ $('rows').replaceChildren();
+ $('activeRootInfo').textContent=handle?'Loading data folder /'+handle.name+'/…':'Local demo archive';
+ $('resultInfo').textContent='Loading selected data folder…';
+ $('catalogStatus').textContent=handle?'Reading saved catalog from /'+handle.name+'/…':'Choose a data folder to browse your own messages.';
  $('existingProgressPanel').hidden=true;
  $('previewReaders').disabled=!handle||busy||repairBusy||readerBusy;
  $('upgradeReaders').disabled=true;
- $('readerStatus').textContent='Back up the archive before updating saved message pages.';
+ $('readerStatus').textContent='Check existing to inspect the selected data folder (read-only).';
  void updateRootInfo(handle,{recent});
  if(handle){
   void quickRootCheck(handle).catch(e=>{
    if(handle!==root)return;
    rootUnsafe=true;rootProbing=false;
-   $('rootSetup').hidden=false;
-   $('rootSetupInfo').textContent='Could not inspect this folder: '+errorText(e)+'. No files were changed.';
-   $('catalogStatus').textContent='Unable to verify archive entry files.';
+   $('catalogStatus').textContent='Could not open selected data folder: '+errorText(e)+'. No files were changed.';
+   $('activeRootInfo').textContent='Cannot read /'+handle.name+'/ — choose the folder again.';
+   $('resultInfo').textContent='Unable to load data catalog.';
    ready();
   });
   void loadRootAccounts(handle);
- }else $('accountInfo').textContent='Choose an archive root to load existing accounts.';
+ }else{
+  $('accountInfo').textContent='Choose a data folder to load existing accounts.';
+  void readCatalog().catch(showBrowseError);
+ }
  ready();
 }
 async function loadRecent(){
@@ -216,17 +262,22 @@ async function loadRecent(){
   if(typeof account==='string'&&!accountTouched){
    try{preferredAccount=C.accountName(account);$('importAccount').value=preferredAccount;}catch{/* Ignore stale invalid values. */}
   }
-  if(handle?.kind==='directory'&&handle.name===selfRootName&&before===selectionVersion&&!root){
+  if(handle?.kind==='directory'&&before===selectionVersion){
    recentRoot=handle;
-   setRoot(handle,{recent:true});
-  }else if(handle?.kind==='directory'&&handle.name===selfRootName&&before===selectionVersion)recentRoot=handle;
+   // Silent restore is allowed only when the browser still grants read permission.
+   // Never prompt automatically during page load.
+   let permitted=false;
+   try{permitted=typeof handle.queryPermission!=='function'||
+    await handle.queryPermission({mode:'read'})==='granted';}catch{}
+   if(permitted&&!root)setRoot(handle,{recent:true});
+   else if(!permitted&&!root)$('activeRootInfo').textContent='Previous data folder: /'+handle.name+'/ — choose it again to grant access.';
+  }
  }catch{/* Recent folder and account storage are optional. */}
  finally{db?.close();if(!root)void updateRootInfo(null);}
 }
 async function rememberRecent(handle){
  recentRoot=handle;
- // A different destination is temporary; reopen always defaults to self.
- if(handle.name!==selfRootName)return;
+ // One remembered folder per copy of the application, regardless of its name.
  let db;
  try{
   db=await recentDB();
@@ -251,7 +302,7 @@ function pickRoot(){
  if(recentRoot)options.startIn=recentRoot;
  return showDirectoryPicker(options);
 }
-$('chooseDir').onclick=async()=>{
+async function chooseDataFolder(){
  if(busy||repairBusy||readerBusy)return;
  try{
   const chosen=await pickRoot();
@@ -260,88 +311,25 @@ $('chooseDir').onclick=async()=>{
   setRoot(chosen);
   void rememberRecent(chosen);
  }catch(e){if(e.name!=='AbortError')showError(e);}
-};
+}
+$('chooseDir').onclick=chooseDataFolder;
+$('browseChooseRoot').onclick=chooseDataFolder;
 void loadRecent();
 
 $('files').onchange=()=>{const files=Array.from($('files').files);$('fileInfo').textContent=files.length+' files · '+(files.reduce((s,f)=>s+f.size,0)/1024**3).toFixed(2)+' GiB. Allow at least this space plus a reserve on the destination drive.';ready();};
-const rootLauncherHTML='<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'+
- '<meta http-equiv="Content-Security-Policy" content="default-src &#39;none&#39;; style-src &#39;unsafe-inline&#39;">'+
- '<meta http-equiv="refresh" content="0; url=__email_archiver/index.html"><title>Open Email Archive</title>'+
- '<style>body{font:16px system-ui,sans-serif;max-width:560px;margin:10vh auto;padding:24px;color:#292d35}a{color:#6c2943}</style></head>'+
- '<body><main><!-- FREEDOM-ARCHIVE-LAUNCHER --><h1>Email Archive</h1><p>'+
- 'Open your portable archive: <a href="__email_archiver/index.html">Open Email Archive</a>.</p>'+
- '<p>This launcher and the archive folder can be moved together.</p></main></body></html>';
-async function install(dir,{onProgress=()=>{}}={}){
- const legacy=await C.exists(dir,'index.html'),modern=await C.exists(dir,C.VIEWER_DIR+'index.html');
- let kind='none';
- if(legacy){
-  const html=await C.read(dir,'index.html');
-  kind=html.includes('assets/core.js')?'archive':
-   html.includes('FREEDOM-ARCHIVE-LAUNCHER')?'launcher':'unrelated';
-  if(kind==='unrelated')throw Error('NONARCHIVE');
- }
- const appDir=modern||kind!=='archive'?C.VIEWER_DIR:'';
- const entries=[...Object.entries(ArchiveBundle),
-  ['assets/bundle.js','globalThis.ArchiveBundle='+C.json(ArchiveBundle)+';\n']];
- let checked=0,changed=0;
- // New roots are created directly. Repeat imports compare files and do not
- // rewrite identical assets (less synced-drive I/O and Defender activity).
- for(const [p,t] of entries){
-  const filePath=appDir+p;
-  let previous=null;
-  if(modern||kind==='archive'){
-   try{previous=await C.read(dir,filePath);}
-   catch(e){if(e.name!=='NotFoundError')throw e;}
-  }
-  if(previous!==t){await C.write(dir,filePath,t);changed++;}
-  checked++;
-  onProgress({checked,total:entries.length+(!legacy?1:0),changed});
- }
- let launcherCreated=false;
- if(!legacy){
-  await C.write(dir,'index.html',rootLauncherHTML);
-  launcherCreated=true;changed++;
-  checked++;
-  onProgress({checked,total:entries.length+1,changed});
- }
- const paths=await C.catalogPaths(dir);
- if(!await C.exists(dir,paths.current)&&!await C.exists(dir,'archive.js')&&
-  !await C.exists(dir,'assets/catalog/archive.js'))await C.write(dir,paths.current,C.wrap(C.empty()));
- return {checked,changed,launcherCreated,viewerDir:paths.viewerDir};
-}
-$('createArchive').onclick=async()=>{
- if(!root||rootUnsafe||rootProbing||busy||repairBusy||readerBusy)return;
- const target=root;
- try{await allowRoot(target);}catch(e){showError(e);return;}
- busy=true;$('createArchive').disabled=true;
- $('rootSetupInfo').textContent='Creating the portable archive in /'+target.name+'/…';
- try{
-  const out=await install(target,{onProgress:p=>{
-   $('rootSetupInfo').textContent='Preparing archive: '+p.checked+' / '+p.total+' application files · '+p.changed+' saved.';
-  }});
-  $('rootSetupInfo').textContent='Archive ready in /'+target.name+'/. Open index.html from that folder; it links to __email_archiver/index.html.';
-  $('rootOpenInfo').hidden=false;
-  $('createArchive').hidden=true;
-  rootIsNew=false;
-  $('catalogStatus').textContent='Archive installed. Choose Check existing to inspect any saved emails or catalog entries.';
-  notice('Created portable Email Archive in /'+target.name+'/ (root index.html and __email_archiver/index.html). Open the selected folder in File Explorer to launch it.');
-  void loadRootAccounts(target);
- }catch(e){$('rootSetupInfo').textContent='Archive creation failed: '+errorText(e);showError(e);}
- finally{busy=false;$('createArchive').disabled=false;ready();}
-};
 function progress(s){$('progress').value=s.totalBytes?Math.min(100,100*s.bytes/s.totalBytes):0;for(const [id,k] of [['readCount','read'],['newCount','new'],['dupeCount','duplicates'],['refreshedCount','refreshed'],['emlSavedCount','emlSaved'],['emlReusedCount','emlReused'],['errorCount','errors']])$(id).textContent=s[k].toLocaleString('en-GB');$('progressDetail').textContent=(s.bytes/1024**2).toFixed(1)+' / '+(s.totalBytes/1024**2).toFixed(1)+' MiB read · '+s.committed+' changes committed to the catalog';}
 $('start').onclick=async()=>{
  if(busy||repairBusy||readerBusy)return;
  let acc;
  try{acc=selectedAccount();}catch(e){showError(e);return;}
  const target=root,sourceFiles=Array.from($('files').files);
- if(!target||rootUnsafe||rootProbing||!sourceFiles.length)return;
+ if(!target||rootUnsafe||rootProbing||!rootAccountsResolved||!sourceFiles.length)return;
  // Permissions remain strictly user-gesture based; this button authorizes the pre-import update.
  try{await allowRoot(target);}catch(e){showError(e);return;}
  preferredAccount=acc;void rememberAccount(acc);
  busy=true;controller=new AbortController();
  $('progressPanel').hidden=true;$('existingProgressPanel').hidden=true;
- $('chooseDir').disabled=true;$('previewReaders').disabled=true;$('upgradeReaders').disabled=true;
+ $('chooseDir').disabled=true;$('browseChooseRoot').disabled=true;$('previewReaders').disabled=true;$('upgradeReaders').disabled=true;
  $('files').disabled=true;$('importAccount').disabled=true;$('importAccountSelect').disabled=true;
  for(const id of ['retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=true;
  $('stop').hidden=false;ready();notice('');
@@ -359,28 +347,10 @@ $('start').onclick=async()=>{
    return;
   }
   if(controller.signal.aborted)return;
-  // Keep the existing-email results intact. The MBOX panel reports any viewer
-  // setup work, then resets to display MBOX bytes/progress.
+  // The application stays in its own folder. Nothing is copied to the data root.
   $('progressPanel').hidden=false;
-  $('status').textContent='Preparing archive viewer…';
+  $('status').textContent='Importing MBOX into '+acc+'…';
   $('progress').value=0;
-  $('progressDetail').textContent='Checking local application files…';
-  const viewerInstallation=await install(target,{onProgress:p=>{
-   $('status').textContent='Preparing archive viewer…';
-   $('progress').value=p.total?100*p.checked/p.total:0;
-   $('progressDetail').textContent=p.checked+' / '+p.total+' viewer files checked · '+
-    p.changed+' changed files updated';
-  }});
-  if(viewerInstallation.launcherCreated){
-   rootIsNew=false;
-   $('rootSetupInfo').textContent='Archive installed. Open index.html in /'+target.name+'/ to browse the new copy.';
-   $('rootOpenInfo').hidden=false;
-   $('createArchive').hidden=true;
-  }
-  if(controller.signal.aborted){
-   notice('Import stopped safely before MBOX processing. Existing HTML updates remain saved.');
-   return;
-  }
   // This stage always comes after the existing-only HTML pass, even if no older pages exist.
   $('existingProgressPanel').hidden=false;
   $('progressPanel').hidden=false;
@@ -390,12 +360,11 @@ $('start').onclick=async()=>{
    emlPolicy:{signed:$('retainSignedEml').checked,encrypted:$('retainSignedEml').checked,
     starred:$('retainStarredEml').checked,important:$('retainImportantEml').checked}});
   const report=await imp.run(sourceFiles,acc);
-  const viewerPath=(await C.catalogPaths(target)).viewerDir+'index.html';
   $('status').textContent=report.interrupted?'Import stopped':'Import complete';
   if(report.issues.length)notice('Some messages could not be imported. Source offsets and error codes are in '+acc+'/catalog/import-….json. Source files were not modified.');
-  try{await readCatalog();}catch{/* The destination may be different from this viewer. */}
+  try{await readCatalog();await loadRootAccounts(target);}catch(e){browseNotice('Import finished, but the selected data catalog could not be loaded: '+errorText(e));}
   if(report.interrupted&&!report.issues.length)notice('Import stopped safely. Earlier committed messages remain saved in '+target.name+'.');
-  else if(!report.issues.length)notice('Import saved to '+target.name+'. Open its own '+viewerPath+' to browse those messages. This tab continues to browse its original archive.');
+  else if(!report.issues.length)notice('Import saved to data folder /'+target.name+'/. Browse now shows this same selected root. No application files were copied.');
  }catch(e){
   if(controller.signal.aborted){
    notice('Import stopped safely. Existing HTML updates and catalog changes already completed remain saved.');
@@ -403,7 +372,7 @@ $('start').onclick=async()=>{
   try{await readCatalog();}catch{}
  }finally{
   busy=false;$('stop').hidden=true;$('stopReaders').hidden=true;
-  $('chooseDir').disabled=false;$('previewReaders').disabled=!root;$('upgradeReaders').disabled=true;
+  $('chooseDir').disabled=false;$('browseChooseRoot').disabled=false;$('previewReaders').disabled=!root;$('upgradeReaders').disabled=true;
   $('files').disabled=false;$('importAccount').disabled=false;$('importAccountSelect').disabled=false;
   for(const id of ['retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=false;
   ready();
@@ -422,6 +391,7 @@ function showBrowseError(e){browseNotice(errorText(e));}
 let repairBusy=false,repairController=null;
 function operateControls(active){
  $('chooseDir').disabled=active;
+ $('browseChooseRoot').disabled=active;
  $('files').disabled=active;
  $('importAccountSelect').disabled=active;
  $('importAccount').disabled=active;
@@ -465,6 +435,7 @@ $('stopReindex').onclick=()=>repairController?.abort();
 
 function readerControls(active){
  $('chooseDir').disabled=active;
+ $('browseChooseRoot').disabled=active;
  $('files').disabled=active;
  $('previewReaders').disabled=active||!root;
  $('upgradeReaders').disabled=active||!root||!readerPreview;
@@ -577,6 +548,7 @@ $('upgradeReaders').onclick=async()=>{
   if(result.errors)$('readerStatus').textContent='Some saved pages could not be updated. Check the result below, then run Check existing again.';
   else if(result.interrupted)$('readerStatus').textContent='Existing-email update stopped. Run Check existing to see what remains.';
   else $('readerStatus').textContent='Existing-email update complete. Run Check existing to verify the remaining pages.';
+  if(!result.interrupted&&!result.errors){await readCatalog();await loadRootAccounts(target);}
  }catch(e){readerPreview=0;$('readerStatus').textContent='Reimport only existing failed: '+errorText(e);}
  finally{readerBusy=false;readerControls(false);}
 };
@@ -586,7 +558,7 @@ $('stopReaders').onclick=()=>{
  else readerController?.abort();
 };
 window.addEventListener('beforeunload',e=>{if(busy||repairBusy||readerBusy){e.preventDefault();e.returnValue='';}});
-window.ArchiveUI={readCatalog,search,install,load,get root(){return root;},get records(){return records;},get catalog(){return catalog;}};
+window.ArchiveUI={readCatalog,search,load,get root(){return root;},get records(){return records;},get catalog(){return catalog;}};
 readCatalog().catch(showBrowseError);
 })();
 

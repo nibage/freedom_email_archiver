@@ -10,7 +10,7 @@ function json(x){return JSON.stringify(x).replace(/</g,'\\u003c').replace(/\u202
 function wrap(x){return 'MailArchive.receive('+json(x)+');\n';}
 function unwrap(x){const m=/^MailArchive\.receive\(([\s\S]*)\);\s*$/.exec(x);if(!m)throw Error('FORMAT');return JSON.parse(m[1]);}
 function safeName(s){let v=norm(s||'attachment').replace(/[\x00-\x1f\x7f<>:"/\\|?*\u202a-\u202e\u2066-\u2069]/g,'_').replace(/[. ]+$/g,'');v=Array.from(v).slice(0,100).join('');if(!v||/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(v))v='file_'+v;return v;}
-function accountName(s){if(!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(s)||/^(assets|con|prn|aux|nul|com[0-9]|lpt[0-9])$/.test(s))throw Error('ACCOUNT');return s;}
+function accountName(s){if(!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(s)||/^(assets|catalog|con|prn|aux|nul|com[0-9]|lpt[0-9])$/.test(s))throw Error('ACCOUNT');return s;}
 async function directory(root,p,create=false){let d=root;for(const x of p.split('/').filter(Boolean)){if(x==='.'||x==='..'||/[\\:\x00-\x1f]/.test(x))throw Error('PATH');d=await d.getDirectoryHandle(x,{create});}return d;}
 async function fileHandle(root,p,create=false){const i=p.lastIndexOf('/');const d=await directory(root,i<0?'':p.slice(0,i),create);const n=p.slice(i+1);if(!n||/[\\:\x00-\x1f]/.test(n)||n==='..')throw Error('PATH');return d.getFileHandle(n,{create});}
 async function write(root,p,value){const f=await fileHandle(root,p,true);const w=await f.createWritable();try{await w.write(value);await w.close();}catch(e){try{await w.abort();}catch{}throw e;}}
@@ -20,14 +20,26 @@ const empty=()=>({kind:'manifest',format:VERSION,generation:0,accounts:[],segmen
 function checkManifest(m){if(m.kind!=='manifest'||m.format!==VERSION||!Array.isArray(m.segments)||!Array.isArray(m.accounts))throw Error('FORMAT');return m;}
 const VIEWER_DIR='__email_archiver/',MANIFEST=VIEWER_DIR+'assets/catalog/archive.js',PREVIOUS=VIEWER_DIR+'assets/catalog/archive.previous.js';
 const LEGACY_MANIFEST='assets/catalog/archive.js',LEGACY_PREVIOUS='assets/catalog/archive.previous.js';
+const DATA_MANIFEST='catalog/archive.js',DATA_PREVIOUS='catalog/archive.previous.js';
 async function catalogPaths(root){
- if(await exists(root,VIEWER_DIR+'index.html'))return {current:MANIFEST,previous:PREVIOUS,viewerDir:VIEWER_DIR};
- if(await exists(root,'index.html'))return {current:LEGACY_MANIFEST,previous:LEGACY_PREVIOUS,viewerDir:''};
- return {current:MANIFEST,previous:PREVIOUS,viewerDir:VIEWER_DIR};
+ // Data-only folders do not need a copy of this application, index.html or assets/.
+ // Keep pre-existing nested and root-level archive catalog layouts readable in place.
+ if(await exists(root,DATA_MANIFEST)||await exists(root,DATA_PREVIOUS))
+  return {current:DATA_MANIFEST,previous:DATA_PREVIOUS,viewerDir:''};
+ if(await exists(root,MANIFEST)||await exists(root,PREVIOUS)||
+    await exists(root,VIEWER_DIR+'index.html'))
+  return {current:MANIFEST,previous:PREVIOUS,viewerDir:VIEWER_DIR};
+ if(await exists(root,LEGACY_MANIFEST)||await exists(root,LEGACY_PREVIOUS))
+  return {current:LEGACY_MANIFEST,previous:LEGACY_PREVIOUS,viewerDir:''};
+ if(await exists(root,'index.html')){
+  const html=await read(root,'index.html');
+  if(html.includes('assets/core.js'))return {current:LEGACY_MANIFEST,previous:LEGACY_PREVIOUS,viewerDir:''};
+ }
+ return {current:DATA_MANIFEST,previous:DATA_PREVIOUS,viewerDir:''};
 }
 async function manifest(root){
  const paths=await catalogPaths(root);
- for(const [current,backup] of [[paths.current,paths.previous],[MANIFEST,PREVIOUS],[LEGACY_MANIFEST,LEGACY_PREVIOUS],['archive.js','archive.previous.js']]){
+ for(const [current,backup] of [[paths.current,paths.previous],[DATA_MANIFEST,DATA_PREVIOUS],[MANIFEST,PREVIOUS],[LEGACY_MANIFEST,LEGACY_PREVIOUS],['archive.js','archive.previous.js']]){
   if(!await exists(root,current)&&!await exists(root,backup))continue;
   try{return checkManifest(unwrap(await read(root,current)));}
   catch{try{return checkManifest(unwrap(await read(root,backup)));}catch{throw Error('CATALOG');}}
