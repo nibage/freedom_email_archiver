@@ -173,14 +173,14 @@ class Importer{
       for(const img of template.content.querySelectorAll('img[src]')){const mapped=links.get(img.getAttribute('src'));if(mapped)img.setAttribute('src',mapped);}
       body=template.innerHTML;
      }
-     await write(this.root,old.path,documentHTML(updated,body,old.attachments,'../'.repeat(old.folder.split('/').length)+this.paths.viewerDir));
+     await write(this.root,old.path,documentHTML(updated,body,old.attachments,'../'.repeat(old.folder.split('/').length)+(this.paths.linkBackDir||this.paths.viewerDir)));
      this.records.set(key,updated);this.pending.push(updated);if(needsAppearanceRefresh)this.stats.refreshed++;
     }
    }else{
     await p.render();
     if(original)p.meta.original=original;
     for(const f of p.files)await write(this.root,f.path,f.bytes);
-    await write(this.root,p.meta.path,documentHTML(p.meta,p.body,p.attachments,'../'.repeat(p.folder.split('/').length)+this.paths.viewerDir));
+    await write(this.root,p.meta.path,documentHTML(p.meta,p.body,p.attachments,'../'.repeat(p.folder.split('/').length)+(this.paths.linkBackDir||this.paths.viewerDir)));
     this.records.set(key,p.meta);this.pending.push(p.meta);this.search.push({key,text:p.text});this.searchBytes+=p.text.length*2;this.stats.new++;
    }
    if(this.pending.length>=this.batchSize||this.searchBytes>=4*1024*1024)await this.commit();this.onProgress({...this.stats});await new Promise(r=>setTimeout(r,0));
