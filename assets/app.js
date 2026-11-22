@@ -30,24 +30,52 @@ function load(src){const p=chain.then(()=>loadScript(localUrl(src)));chain=p.cat
 function notice(s){$('operationNotice').textContent=s;$('operationNotice').hidden=!s;}
 function browseNotice(s){$('notice').textContent=s;$('notice').hidden=!s;}
 function options(id,items,first){const el=$(id),old=el.value;el.replaceChildren(new Option(first,''));for(const s of items)el.add(new Option(s,s));if(items.includes(old))el.value=old;}
+async function loadArchiveSegment(path,selectedRoot){
+ // Mounted data roots are read through the selected File System Access handle.
+ // The application never loads their catalogs by script tag or from its own folder.
+ return selectedRoot?C.unwrap(await C.read(selectedRoot,path)):load(path);
+}
 async function readCatalog(){
- let last;catalog=null;
- for(const src of [C.MANIFEST,C.PREVIOUS,'assets/catalog/archive.js','assets/catalog/archive.previous.js','archive.js','archive.previous.js']){
-  try{const result=await load(src+'?g='+Date.now());if(result?.format!==C.VERSION)throw Error('FORMAT');catalog=result;break;}catch(e){last=e;}
+ const selectedRoot=root,revision=selectionVersion;
+ let nextCatalog,last;
+ if(selectedRoot){
+  nextCatalog=await C.manifest(selectedRoot);
+  if(nextCatalog?.format!==C.VERSION)throw Error('FORMAT');
+ }else{
+  // A standalone checked-out demo can still show its fictional fixtures.
+  for(const src of [C.MANIFEST,C.PREVIOUS,'assets/catalog/archive.js',
+   'assets/catalog/archive.previous.js','archive.js','archive.previous.js']){
+   try{const result=await load(src+'?g='+Date.now());if(result?.format!==C.VERSION)throw Error('FORMAT');
+    nextCatalog=result;break;}catch(e){last=e;}
+  }
+  if(!nextCatalog)nextCatalog=C.empty();
  }
- if(!catalog)throw last||Error('CATALOG');
- records.clear();cache.clear();for(const seg of catalog.segments){const m=await load(seg.meta);for(const r of m.records)records.set(r.account+'/'+r.id,r);}all=[...records.values()].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||a.id.localeCompare(b.id));options('accountFilter',catalog.accounts,'All accounts');options('labelFilter',[...new Set(all.flatMap(r=>r.labels))].sort(),'All labels');if(root)void loadRootAccounts(root);
+ const found=new Map();
+ for(const seg of nextCatalog.segments){
+  const m=await loadArchiveSegment(seg.meta,selectedRoot);
+  if(m.kind!=='metadata'||!Array.isArray(m.records))throw Error('CATALOG');
+  for(const r of m.records)found.set(r.account+'/'+r.id,r);
+ }
+ if(root!==selectedRoot||revision!==selectionVersion)return;
+ queryVersion++;catalog=nextCatalog;
+ records=found;cache.clear();
+ all=[...records.values()].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||a.id.localeCompare(b.id));
+ options('accountFilter',catalog.accounts,'All accounts');
+ options('labelFilter',[...new Set(all.flatMap(r=>r.labels))].sort(),'All labels');
  if(remembered&&remembered.values&&Number.isFinite(remembered.when)&&Date.now()-remembered.when<=30*60*1000){
   for(const [id,value] of Object.entries(remembered.values)){
    if(['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter','pageSize'].includes(id)&&typeof value==='string')$(id).value=value;
   }
  }
+ $('activeRootInfo').textContent=selectedRoot
+  ?'Active data folder: /'+selectedRoot.name+'/ · '+all.length.toLocaleString('en-GB')+' indexed messages'
+  :'Local demo archive · '+all.length.toLocaleString('en-GB')+' fictional messages';
  await search();restoreReturnPosition();
 }
 function metadataText(r){return C.fold([r.subject,r.from,r.to,r.cc,r.bcc].join(' '));}
 async function search(){const v=++queryVersion;currentPage=0;const terms=C.fold($('query').value).split(/\s+/).filter(Boolean);const acc=$('accountFilter').value,lab=$('labelFilter').value,from=$('dateFrom').value,to=$('dateTo').value,attach=$('attachmentFilter').value;const candidates=all.filter(r=>(!acc||r.account===acc)&&(!lab||r.labels.includes(lab))&&(!from||r.day&&r.day>=from)&&(!to||r.day&&r.day<=to)&&(!attach||(attach==='yes')===!!r.attachments.length));
  if(!terms.length){matches=candidates;render();return;}const wanted=new Map(),found=new Set();for(const r of candidates){const key=r.account+'/'+r.id,meta=metadataText(r);if(terms.every(t=>meta.includes(t)))found.add(key);else wanted.set(key,meta);}
- $('resultInfo').textContent='Searching local text indexes…';let done=0;for(const seg of catalog.segments){if(v!==queryVersion)return;if(!seg.search)continue;let data=cache.get(seg.search);if(!data){data=await load(seg.search);cache.set(seg.search,data);if(cache.size>4)cache.delete(cache.keys().next().value);}for(const x of data.records){const meta=wanted.get(x.key);if(meta!==undefined){const hay=meta+' '+C.fold(x.text);if(terms.every(t=>hay.includes(t)))found.add(x.key);}}done++;if(done%5===0){$('resultInfo').textContent='Searched '+done+' indexes…';await new Promise(r=>setTimeout(r,0));}}
+ $('resultInfo').textContent='Searching local text indexes…';let done=0;for(const seg of catalog.segments){if(v!==queryVersion)return;if(!seg.search)continue;let data=cache.get(seg.search);if(!data){data=await loadArchiveSegment(seg.search,root);cache.set(seg.search,data);if(cache.size>4)cache.delete(cache.keys().next().value);}for(const x of data.records){const meta=wanted.get(x.key);if(meta!==undefined){const hay=meta+' '+C.fold(x.text);if(terms.every(t=>hay.includes(t)))found.add(x.key);}}done++;if(done%5===0){$('resultInfo').textContent='Searched '+done+' indexes…';await new Promise(r=>setTimeout(r,0));}}
  if(v!==queryVersion)return;matches=candidates.filter(r=>found.has(r.account+'/'+r.id));render();}
 function render(){const size=+$('pageSize').value,pages=Math.max(1,Math.ceil(matches.length/size));currentPage=Math.min(currentPage,pages-1);$('rows').replaceChildren();for(const r of matches.slice(currentPage*size,(currentPage+1)*size)){const tr=document.createElement('tr');const tdDate=document.createElement('td');tdDate.className='date';tdDate.textContent=r.date?new Date(r.date).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Unknown date';const tdAddr=document.createElement('td');tdAddr.textContent=r.from||'(Not specified)';const to=document.createElement('span');to.className='address';to.textContent='To: '+(r.to||'—');tdAddr.append(to);const tdSub=document.createElement('td');const a=document.createElement('a');a.className='subject';a.textContent=r.subject||'(No subject)';a.href=localUrl(r.path.split('/').map(encodeURIComponent).join('/'))+'?fromArchive=1&images='+($('autoImages').checked?'auto':'manual')+'&theme='+(document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light');a.target='_self';a.addEventListener('click',e=>{if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey)saveReturnPosition();});tdSub.append(a);for(const text of [r.account,...r.labels]){const s=document.createElement('span');s.className='badge';s.textContent=text;tdSub.append(s);}const tdAtt=document.createElement('td');tdAtt.textContent=(r.attachments.length?'⌕ '+r.attachments.length:'—')+(r.original?' · EML':'');tr.append(tdDate,tdAddr,tdSub,tdAtt);$('rows').append(tr);}$('empty').hidden=!!matches.length;$('resultInfo').textContent=matches.length.toLocaleString('en-GB')+' messages'+(matches.length!==all.length?' of '+all.length.toLocaleString('en-GB'):'');$('pageInfo').textContent=(currentPage+1)+' / '+pages;$('prev').disabled=currentPage===0;$('next').disabled=currentPage>=pages-1;}
 let timer;for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>search().catch(showBrowseError),200);});window.addEventListener('archive-theme-change',render);$('pageSize').onchange=render;$('prev').onclick=()=>{currentPage--;render();};$('next').onclick=()=>{currentPage++;render();};$('reset').onclick=()=>{for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).value='';search().catch(showBrowseError);};
