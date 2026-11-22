@@ -1,143 +1,80 @@
-# Email Archive
+# Freedom Email Archiver
 
-A portable, offline email archive for exported MBOX files. Open the archive's `__email_archiver/index.html` (or the legacy root `index.html`) directly in a desktop browser. No server, account, CDN, cloud API or browser-profile database is required.
+A local, offline MBOX email archiver. **The application and email data live in separate folders.** Open the application's `index.html` from a locally available folder, then select one data root using Chrome/Edge's File System Access picker. One running app instance browses and imports into **one selected root** and all its accounts; selecting another root replaces the loaded catalog. The app **never copies `index.html`, `assets/` or a launcher** into your data root.
 
-**This repository contains only four fictional example messages.** Names, addresses and attachments are made up; email addresses use the reserved `.invalid` domain.
+This public repository contains only fictional example messages. Never import private email into a checkout you plan to publish.
 
-## Try it
-
-Download and extract the repository ZIP, then open `index.html` locally. Search for `orchard`, filter by `Travel`, or open **A tiny trip plan** to see a CID image and a text attachment. A GitHub source-code page is not the archive viewer.
-
-For your real mail, click the **green Import button** and select a **separate folder outside this repository** in the import workspace. Never import private mail into a checkout you intend to publish. For a new destination, the application installs its full viewer under `__email_archiver/` **and a tiny root `index.html` launcher** which redirects to the viewer and contains an offline clickable link. Open the selected root folder in File Explorer and double-click its `index.html`. Previously created root-level viewers remain supported.
-
-### Two different folder choices
-
-- **Account folder inside the archive**, for example `personal`, is the name of a subfolder and the scope of deduplication. It is not a disk path.
-- **Archive root folder** is the parent folder containing `__email_archiver/` and your account folders, or an empty folder for a new archive. Old archives with a root-level `index.html` remain supported. Do not select `__email_archiver/` or the account subfolder.
-
-Example: selecting an empty archive root named `MyMail` and entering `personal` creates `MyMail/__email_archiver/index.html` and `MyMail/personal/2025/2025-01/…`.
-
-## Import and update
-
-1. Use desktop Chrome or Edge with the File System Access API.
-2. Choose **Import folder root** (catalog check starts automatically), choose one or more MBOX files, then choose an existing email account from the dropdown or **+ New account…** and enter its name. Thunderbird files without an extension are accepted. Extract Takeout ZIP files first.
-3. Check free disk space yourself, then start the import and keep the tab open.
-4. Open `__email_archiver/index.html` in a new destination when finished, or the existing root-level `index.html` for a legacy archive. Selecting a root in the importer also refreshes the visible account counts, but individual messages should be opened from the destination viewer.
-
-Use the same archive root and account for later overlapping exports. The optional EML policy can preserve signed/encrypted, Starred and Important messages; reimporting the same MBOX automatically refreshes only the HTML appearance of messages saved by older renderers. Existing mail is retained. Gmail labels are merged as a union. The same Message-ID with different content remains a separate message. Reimporting the same input does not add messages or attachments. Already-current saved HTML is not rewritten, but older HTML without a renderer-version marker is refreshed once, which may take longer.
-
-Use Stop to commit the current batch. After a crash, reimport the source from the beginning: previously committed messages are recognized. Source files are never modified. Run only one writer per archive, including across cloud-synced computers.
-
-## Fast root selection, offline launcher, and Windows Security notifications
-
-Selecting **Import folder root** now performs only a read-only check for existing archive entry files/manifest, not a complete catalog scan, write lock or automatic rebuild. A new destination displays **Create archive here**, and **Start import** also installs the viewer when needed. Installation creates both `<root>/__email_archiver/index.html` with its local assets and a minimal `<root>/index.html` launcher that automatically redirects and contains a working relative **Open Email Archive** link. Existing legacy root viewers and unrelated root HTML files are not overwritten. To open the new archive, use File Explorer to double-click `index.html` inside the selected folder. The browser folder handle exposes a directory name but **not an absolute Windows path**, so the importer cannot construct a guaranteed direct `file://` URL to an arbitrary selected destination.
-
-**Check existing** now does the longer, **read-only** inventory of existing catalog references and saved HTML reader appearance. If missing indexes are found, **Start import** or **Reimport only existing** performs strict catalog recovery before processing stored HTML; they do not silently modify an archive just because its folder was selected. The existing-only updater does one pass, reads each HTML file once and acquires the exclusive writer only if an older recognized HTML page actually requires writing. Already-current pages are skipped; a no-change update does not create a writer lock.
-
-A Windows Defender notification cannot be hidden by this HTML application. Defender's **Controlled folder access** can notify when it blocks attempted modifications in protected folders. Verify the exact notification in **Windows Security → Protection history** before changing anything. Never disable Defender or broadly exclude mail archives simply to suppress prompts. The new read-only selection and reduced writes may reduce prompts but do not bypass Windows security controls.
-
-## Automatic catalog recovery and account selection
-
-The **Import** tab now contains one unified workflow. Choose **Import folder root** first for quick detection, then use **Check existing** for a full read-only inventory. When you start importing or reimport only existing, the application skips entries already in the healthy catalog and adds missing HTML messages to new index shards. If an existing catalog is missing or damaged, it attempts a strict complete reconstruction from saved HTML. Existing HTML, attachments and original EML are not rewritten by catalog recovery. The last valid catalog is not replaced if any page cannot be validated. A brief status line directly beneath the import buttons reports the scan, e.g. **Catalog is up to date; 4 messages already indexed. No indexes rewritten.** A Stop button appears during longer scans; a healthy catalog does not open another progress card. This **read-only entrypoint check** starts after explicitly choosing a folder; the deep Check existing inventory runs only when you request it, and permission is never requested silently at startup. Scanning many folders still requires filesystem enumeration, but already-indexed emails are not parsed again.
-
-Next choose one or more MBOX files if you want to import additional emails (this remains optional for catalog recovery). The **third control** is **Email account folder inside the archive**, a dropdown populated from valid account folders and the selected root's catalog. Select an existing account or **+ New account…**, which reveals a validated name field. The MBOX will be imported **only to the selected account**. Remembered account choices are respected when the account exists, otherwise the first existing account is selected; a new empty archive defaults to a new account. No account is implicitly deleted or merged.
-
-If your previously saved HTML emails still display the old green Back link or ignore dark/light mode, use **Check existing** and **Reimport only existing**, placed to the right of **Start import** on the same action row. After taking a complete backup, the tool can regenerate **only a verified old standalone viewer shell** from the saved HTML and its embedded metadata, without MBOX. It preserves the sender's <main> content bytes, attachments and catalog. Unknown or modified pages are skipped. The Check existing result appears immediately below those buttons; Reimport only existing displays its own progress bar, counters and final result underneath. This is an explicit writing action; merely selecting a root does not rewrite existing email pages. The update can be stopped and retried.
-
-**Start import** first performs the same verified HTML-only update for existing saved emails across all accounts, then checks/updates only changed application files and processes the selected MBOX into the chosen account. The existing-email update and new-message import have **separate progress panels**. If the first stage is stopped or has read/write errors, the MBOX stage does not begin; previously saved pages remain intact. Unknown/unrecognized reader formats are skipped, not rewritten. Back up your archive before starting an update/import. The archive never needs the old MBOX solely to refresh supported existing HTML viewer shells.
-
-## Incremental import and legacy messages
-
-New imports automatically generate self-contained HTML messages with the current image loading and navigation controls. A separate **Check older email appearance** / **Update older email appearance** action is available in the unified Import area. On a backed-up archive, verified older standalone HTML viewers can receive light/dark mode and the current navigation controls **without importing the MBOX again**. The catalog check itself does not change HTML reader scripts.
-
-The single-column centered Import workspace selects the archive root, then MBOX files, and finally an existing or New account; it shows a short selected-folder label (full absolute filesystem paths are unavailable through the browser picker). EML checkboxes and their labels are on one line. The import form includes automatic catalog recovery progress, optional safe viewer-shell updates, and a separate **Safe incremental import** information section near the bottom. There is no longer a standalone Repair panel. The Browse filters use four equal-width columns: Search spans two, From/To dates have matching smaller sizes, and **Clear filters** is a normal button.
-
-## Light and dark interface themes
-
-Each theme includes a **matching SVG favicon**: a small envelope on a burgundy background in light mode, and an orange envelope on charcoal in dark mode. The favicon changes when you switch the theme and is stored entirely in the portable archive at `assets/favicon-light.svg` and `assets/favicon-dark.svg`. Both are included in new archive installations. When updating an older archive by copying UI assets, copy both icon files along with `index.html`, `assets/theme.js`, `GUIDE.html` and the updated `assets/bundle.js` (without replacing catalogs or existing email pages).
-
-
-
-Use the **Dark mode / Light mode** switch in the top-right header of the offline archive. Light mode uses a muted deep-burgundy and soft-grey palette; dark mode uses charcoal panels and an amber/orange accent. The selected mode is kept in the browser's local storage when available, so opening the same archive again retains your choice. If the browser disables local storage, the switch still works for the currently open page. The offline Guide follows the same setting.
-
-The viewer, Guide, and **outer shell of newly generated or explicitly updated standalone email pages** follow the light/dark theme, including the Back link. The email body itself remains on a neutral white reading surface to preserve the original sender styling. Links opened from Browse carry an explicit `?theme=dark|light` preference; a directly opened page can also read the saved local theme when browser storage allows. **Existing email HTML pages won't gain the new shell merely by replacing application files.** Their headers/scripts are saved inside each message, so they must be regenerated from the original MBOX (the renderer version is incremented for future reimports). No email attachments or catalogs are modified by using the theme toggle.
-
-## Reading preferences and navigation
-
-The Browse archive toolbar has **Load external images automatically** checked by default. For messages generated with this reader version, links from the archive open the message with remote images loaded automatically when online. Uncheck it to keep remote images blocked and use the per-message **Load external images** button instead. External image requests can disclose your IP address and email-open tracking identifiers to remote services; uncheck the option for privacy-sensitive messages. A direct standalone `email-*.html` opening without the viewer's preference parameter remains blocked by default.
-
-The preference uses optional tab-scoped browser session storage, not the mail catalog or private cloud. The viewer remembers the current search filters, page and scroll location when opening a message; the Back link in newly generated message pages uses the browser's previous history entry, and the viewer also offers a session-scoped scroll restoration fallback when an older message opens the catalog through its ordinary link. Browser storage/privacy settings may prevent the fallback; Chrome's Back button remains an alternative. Older already-saved HTML pages do not yet contain the updated image auto-load and history-aware script; restoring those per-message controls requires regenerating their HTML from the MBOX or a separate HTML-only upgrade.
-
-## Unified import and catalog repair
-
-Click the **green Import button in the upper-right navigation** to switch to the import workspace in the **same `index.html`**. Import and incremental catalog recovery use the same **Import folder root** selection; there is no separate Repair panel. Click **Browse archive** to return to the list; selecting a target never changes the opened viewer.
-
-The default destination is the archive containing the **currently opened `index.html`** (shown as **Self archive**). The browser stores a remembered directory handle and account choice **separately for each viewer path** in optional IndexedDB. It never silently selects the last folder used by another archive, and selecting a different destination only changes this tab's current target, not its future default. There is no *Use recent archive* button. Click **Import folder root** to grant access to the current archive or to explicitly choose another folder. Changing it starts a new catalog check after selecting the folder. Already indexed files are skipped. Chrome cannot derive a filesystem handle or grant write permission from a local HTML page's location alone. If this viewer has not been granted access before, you must choose its root folder once. Chrome may prompt again at **Start import**, but restoring indexes starts automatically after you manually choose the archive root.
-
-The app displays its **Self archive** path on first opening (even before directory access), and once permitted its selected root name (`emails/`), viewer path and indexed message count. The File System Access API **does not disclose the absolute local filesystem path** for an arbitrary chosen directory, so the UI does not invent one. Only the folder handle and account name are stored as optional browser preferences; email contents remain in your archive. Browsing remains portable without any browser profile.
-
-To **test recovery** on a duplicate archive without the original MBOX, leave every `email-*.html`, attachment and account catalog intact. Rename `__email_archiver/assets/catalog/archive.js` to `archive.js.bak` and `archive.previous.js` to `archive.previous.js.bak` inside that duplicate, then explicitly choose its parent root under Import to start a strict automatic catalog recovery. For legacy root viewers the manifests are under `assets/catalog/`. A missing-catalog warning before recovery is expected. You can also delete the entire copied viewer `assets/catalog/` directory to test recreating it. The strict reconstruction reads each saved HTML page and validates repairability and reports problems before enabling Rebuild. The standard, non-destructive test is simply to run Rebuild without renaming anything.
-
-Rebuild changes only the catalog inside the currently selected root; it does not move or rewrite HTML messages or attachments. Open that root's own viewer to browse it. Back up the whole archive before any rebuild.
-
-## Reading, backup and cloud storage
-
-Copy the **whole archive root**, including `__email_archiver`, both manifests and all account folders (or `index.html` and `assets` for a legacy archive). On another computer, make the files available locally and open `index.html`. A cloud provider's web preview is not a supported runtime. For offline use, mark the complete folder as available offline and wait for synchronization to finish.
-
-Backing up after a completed or safely stopped import avoids inconsistent copies. The archive is not encrypted. Do not publish your real archive to GitHub, GitHub Pages or a public cloud share.
-
-## Files and data
+## Structure
 
 ```text
-__email_archiver/
-  index.html                 application interface
+Freedom_Email_Archiver/                 <-- app, stored wherever you prefer
+  index.html
   GUIDE.html
-  assets/                    local application source and libraries
-    archive.lock             import coordination file
-    catalog/
-      archive.js             current manifest (data)
-      archive.previous.js    previous manifest (data)
-example/
-  catalog/                   generated metadata and search indexes
-  2025/2025-01/
-    email-<sha256>.html       standalone message
-    attachments/             ordinary attachment files
-  unknown-date/              messages with missing or invalid dates
-examples/                    fictional source MBOX fixtures
+  assets/                               <-- app JavaScript, CSS, icons
+
+My_Email_Data/                          <-- data root, selected in the app
+  catalog/                              <-- new data-only manifest & indexes
+    archive.js
+    archive.previous.js
+  personal/
+    catalog/                            <-- message metadata and search shards
+    2025/2025-01/
+      email-<stable-id>.html
+      attachments/
+      originals/                        <-- optional saved EML
+  work/
+    2026/2026-11/
+      email-<stable-id>.html
+  archive.lock                           <-- created during a write operation
 ```
 
-New archives keep generated manifests under `__email_archiver/assets/catalog/`, with year/month HTML pages and attachments in sibling account folders. **Existing archives are not moved automatically**: root-level `index.html`, root-level `archive.lock` and `assets/catalog/` (or older root-level manifests) continue to work and new imports keep their existing layout. New archives keep the lock inside `__email_archiver/`.
+**New imports do not install an application copy or create a root `index.html` in the data folder.** Older archives that already contain `__email_archiver/index.html` or a root-level app remain readable in place through their existing catalogs. Nothing is deleted or moved automatically. A second independent app copy can be made **manually**; each copy can remember its own most recently selected data folder in the browser.
 
-The `.js` extension of catalog files permits loading data through classic scripts under `file://`; it does not make those files application source code. The app does not use `fetch()` to read local JSON or ES modules.
+## First use and later imports
 
-**Choose the archive root in Import** to scan the year/month folders and recover metadata/search shards from existing `email-<sha256>.html` pages. Indexed messages are skipped and only missing entries are added; damaged/missing catalogs trigger strict reconstruction. A preview validates every recognized HTML page, lists unreadable/invalid examples and blocks rebuild if it finds errors or duplicate IDs. Rebuild does not rewrite HTML or attachments. HTML generated by this version embeds its own metadata; older standalone pages can recover basic records from readable header fields when possible (without inventing MIME originals). A rebuild cannot restore original MIME bytes or lost formatting. Dropping unrelated HTML/EML files into an archive does not register them.** The viewer reads the catalog and search indexes. Add messages through the importer. Automatic registration of arbitrary manually added HTML/EML messages is not supported.
+1. Use desktop Chrome or Edge. Open the **application** `index.html` by double-clicking it. The built-in fictional demo is shown until you select your own data root.
+2. Click **Choose data folder** (in Browse or Import). This one folder becomes the active root for **both** tabs. The selection is read-only; it does not create an archive or recursively scan your mail. You may need to reselect the folder if browser permissions are lost.
+3. For a new MBOX import, click **Import**, choose the source MBOX files and select an existing account or **+ New account…**. **Start import** safely checks any existing HTML and indexes before importing to the selected account. Source MBOX files are read only; interrupted imports can be retried.
+4. Return to **Browse archive** in the same app. Search, filters, account dropdown, and email links now use the selected **data root**, not the directory containing the program.
+5. For future overlapping exports, select the same data root and account. Existing messages are retained and deduplicated; Gmail labels are merged. The original MBOX is not deleted.
 
-## Browser support and limits
+A root can have any number of email accounts, but one app tab has just one active root. Choosing another folder unloads the old catalog and replaces the visible messages/accounts. A remembered folder handle is a browser preference, **not** the authoritative mail store. All mail, attachments and indexes remain in the selected data root.
 
-- Desktop Chrome: the underlying implementation was tested with native directory selection and file writes. This English package has additional automated offline browser and import-engine tests; see `tests/VERIFICATION.md`.
-- Desktop Edge: targeted via the same File System Access API, not independently tested here.
-- Firefox and Safari: reading is intended to use standard local HTML and classic scripts; not independently verified for this release. Import is not supported without the required filesystem API.
-- Cross-platform paths use relative links and ASCII attachment storage names. Linux was not tested on the Windows development machine.
-- MBOX is read in 1 MiB chunks, with one message parsed at a time. The per-message limit is 64 MiB. A single line over 64 MiB ends that source file with an error. MIME and decoded DOM representations can consume considerably more memory; allow sufficient RAM.
-- Creating many thousands of separate files through the browser can take hours. Search scans prebuilt text shards, not individual message HTML files; the first query on a large archive can take several seconds.
-- Dates are grouped by UTC year/month. Local display time can differ. Missing/invalid dates use `unknown-date`.
-- MBOX envelope detection validates a date-shaped separator and following headers, supports mboxrd escaping and verified Content-Length boundaries. Unescaped body text that exactly impersonates a full MBOX envelope and header block is inherently ambiguous.
-- The renderer preserves a bounded set of safe inline colors, typography, table formatting and supported CSS rules. It still removes active HTML, untrusted scripts, CSS network URLs and unsupported styles. Some complex newsletters will therefore not match Thunderbird exactly. Retain the source MBOX for full fidelity.
-- External HTTP(S) images in standalone pages opened directly are **blocked on opening**; archive links honor the checked-by-default remote-image preference. When not auto-loaded, each message with remote images has a **Load external images** button; using it may reveal your IP address or open a tracking pixel. Embedded CID images and bounded inline raster data images remain local and offline.
-- To improve messages already imported with the earlier renderer, reselect the original MBOX files. The importer automatically rewrites only HTML saved by an older renderer (or without a version marker), preserving deduplication, attachment files and Gmail labels; subsequent imports skip those already updated. Missing image placeholders describe their likely reason (remote image, missing inline CID attachment, or unsupported source); they do not prove an email is malicious. Without the original MBOX, discarded formatting cannot be reconstructed. Keep a backup before an upgrade.
-- Binary attachment contents are not full-text indexed. Encrypted messages are not decrypted. Embedded-message previews are bounded to three levels.
-- Catalog segments are append-only; automatic compaction and deletion are not implemented.
-- The supported import workflow is MBOX. EML, Maildir, PST/OST and MSG are not advertised as supported formats.
+## Browsing messages from another folder
 
-## Development
+The browser's File System Access API does not disclose an absolute Windows path for a selected folder, so constructing a cross-folder `file://` URL is not reliable. The app instead reads saved HTML and attachment files using the selected folder handle and displays the message inside a **sandboxed same-tab viewer**. The iframe has no script permission or same-origin access. Supported inline CID pictures are resolved to temporary local Blob URLs; downloaded attachments and optional original EML copies are local too. Temporary Blob URLs are revoked when leaving the message. Sender-provided JavaScript is not executed.
 
-No build step is required to run the app. The readable application source is `assets/mail-renderer.js`, `assets/eml.js`, `assets/core.js`, `assets/reindex.js`, `assets/app.js`, `assets/style.css` and `index.html`.
+The application keeps the current search/filter/page when you return from the in-app message viewer. Light/dark theme follows the app; the mail body preserves its saved formatting. **Load external images automatically** is checked by default. Turn it off to avoid remote requests unless you explicitly click **Load external images**. Remote images may identify you to their host; they require connectivity. Unknown or edited saved HTML lacking valid embedded archive metadata is rejected by the integrated reader instead of being executed.
 
-After changing application files or `GUIDE.html`, run `node scripts/build-bundle.cjs`. This refreshes `assets/bundle.js`, the self-contained installer payload used when importing into a new empty folder. It includes application files only, never the example or private email catalog.
+Each `email-*.html` file is also independently readable when opened directly from its data folder; its relative attachments remain there. Its old **Back to archive** link may no longer point to the separate application, so use the application's Browse toolbar for navigation. Existing legacy archived pages remain on disk unchanged.
 
-Run `node scripts/check-public.cjs` before publishing. It rejects unexpected top-level folders, non-example catalog accounts and private-looking filesystem paths. This is an additional check, not a substitute for reviewing what you commit.
+## Check existing, reimport only existing and catalog recovery
 
-Open `tests/index.html` in Chrome/Edge to run import and reindex tests in a separate empty folder. The new sibling-folder viewer layout, same-tab message navigation and stop/resume behavior should also be verified in a real browser before migrating any production archives. `examples/example.mbox` contains the four bundled messages. `examples/overlap.mbox` demonstrates one duplicate with updated labels and one new message.
+**Check existing** performs the longer **read-only** scan of all selected account folders and existing catalogs, then checks saved HTML appearance. It does not copy application files or write to the selected root.
+
+**Reimport only existing** repairs missing catalog entries and refreshes only recognized old HTML reader shells from saved files; it does **not** need the MBOX. The original saved email body, attachments and EML originals are preserved. A write lock is acquired only when a page needs modification. Use a complete backup before repairs; stop/retry is supported.
+
+**Start import** runs catalog recovery and supported existing-HTML refresh before reading the new MBOX. Once that succeeds, new messages are added to the selected account. Healthy indexes and already-current HTML are not regenerated unnecessarily. The UI shows separate progress for existing saved messages and MBOX import. Only one writer should operate on a data root at once, including across synced devices.
+
+## Backups, portability and privacy
+
+Back up the **entire data root** (account folders, `catalog/`, and any legacy `assets/catalog/` or `__email_archiver/` folders that already exist). Back up the application separately. After moving data to another computer, open an app copy and select that data root. Sync-drive copies must be fully available offline; a cloud provider's website preview is not a runtime. No server, login, telemetry, CDN or cloud API is used.
+
+The application is not an encrypted mail vault: protect the data folder and backups. For archiving correctness, preserve the original MBOX independently, especially for signatures or forensic use. The maximum individual message size is 64 MiB. Long imports are streamed rather than loading the entire MBOX into RAM. Not all complex HTML will match Thunderbird.
+
+**Windows Defender:** the app cannot disable Windows security notifications. Inspect Windows Security → Protection history if Controlled folder access or another rule blocks file writes; do not disable protection or broadly exclude your emails. Folder selection and Check existing are read only.
+
+## Supported browsers and current limits
+
+- **Chrome / Edge desktop:** File System Access API for selecting, browsing, searching and importing data stored outside the app directory. Re-selecting a folder might require renewed browser permission.
+- **Other browsers:** standalone saved HTML mail is readable directly, but the app's selected-root workflow requires File System Access support; Firefox/Safari are not verified for external-folder browsing.
+- Some older saved mail without valid embedded metadata cannot be loaded in the isolated selected-root viewer, although it remains readable by directly opening the HTML file.
+- Sandboxed embedded-message preview links may download as files rather than open inside the viewer. Absolute filesystem links cannot be reconstructed from a directory picker.
+- Application source files must be updated in the app directory; updating the app does not silently rewrite data roots. The legacy `assets/bundle.js` is retained for source compatibility but **is not loaded or copied by the app**.
+
+## Development and tests
+
+`node tests/eml-node.cjs`, `node tests/importer-lazy-node.cjs`, `node tests/catalog-sync-node.cjs`, `node tests/data-root-viewer-node.cjs` and the other Node checks exercise saved-mail deduplication, catalog recovery, and cross-folder message isolation. Run `node scripts/build-bundle.cjs` only when maintaining the unused legacy source bundle; it is **not** an installer anymore. GitHub Actions runs the full check suite. Actual Chrome/Edge behavior on Windows/Linux and large synced data roots still requires real-browser validation.
 
 ## License
 
