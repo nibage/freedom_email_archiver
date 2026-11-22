@@ -90,7 +90,7 @@ function rowLink(){assert.equal(el('rows').children.length,1);return el('rows').
  assert.equal(el('importAccountSelect').value,'personal');
  // Browse and Import use precisely the same root chooser and active dataset.
  await el('browseChooseRoot').onclick();
- await settle(()=>window.ArchiveUI.root===rootB&&rowLink().textContent==='Archive B message');
+ await settle(()=>window.ArchiveUI.root===rootB&&el('rows').children.length===1&&rowLink().textContent==='Archive B message');
  assert.equal(pickerArgs.mode,'read');
  assert.match(el('activeRootInfo').textContent,/MailB/);
  assert.equal(el('importAccountSelect').value,'work');
