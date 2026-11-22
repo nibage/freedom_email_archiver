@@ -210,66 +210,46 @@ async function updateRootInfo(handle){
 }
 async function quickRootCheck(handle){
  const version=selectionVersion;
- const modern=await C.exists(handle,C.VIEWER_DIR+'index.html');
- const legacy=await C.exists(handle,'index.html');
- let oldKind='none';
- if(legacy){
-  const page=await C.read(handle,'index.html');
-  oldKind=page.includes('assets/core.js')?'archive':
-   page.includes('FREEDOM-ARCHIVE-LAUNCHER')?'launcher':'unrelated';
- }
+ const m=await C.manifest(handle);
  if(handle!==root||version!==selectionVersion)return;
- rootUnsafe=oldKind==='unrelated';rootProbing=false;
- rootIsNew=!modern&&!legacy;
- $('previewReaders').disabled=rootUnsafe||busy||repairBusy||readerBusy;
+ rootProbing=false;rootUnsafe=false;rootIsNew=!(m.segments?.length||m.total);
+ $('catalogStatus').textContent=m.total
+  ?'Data folder loaded · '+m.total+' indexed messages. Use Check existing for a deeper scan.'
+  :'Data folder loaded with no catalog entries. New imports write data and indexes here; no application files are copied.';
+ $('previewReaders').disabled=busy||repairBusy||readerBusy;
  $('upgradeReaders').disabled=true;
- $('rootSetup').hidden=false;
- $('rootOpenInfo').hidden=!(rootIsNew||modern||oldKind==='launcher');
- $('createArchive').hidden=!(rootIsNew||(modern&&!legacy)||(oldKind==='launcher'&&!modern));
- $('createArchive').disabled=busy||repairBusy||readerBusy||rootUnsafe;
- if(rootUnsafe){
-  $('rootSetupInfo').textContent='This folder already contains an unrelated index.html. Choose another folder; no files have been modified.';
-  $('catalogStatus').textContent='Archive selection rejected. Existing files will not be overwritten.';
- }else if(rootIsNew){
-  $('rootSetupInfo').textContent='No Email Archiver installed in /'+handle.name+'/. Create archive here or Start import will create __email_archiver/ and an index.html launcher in this root folder.';
-  $('catalogStatus').textContent='New destination selected. No catalog scan is necessary. Check existing can scan saved account folders if present.';
- }else if(oldKind==='launcher'&&!modern){
-  $('rootSetupInfo').textContent='A root launcher exists, but its __email_archiver/index.html is missing. Choose Create archive here to restore the application.';
-  $('catalogStatus').textContent='The archive viewer needs to be installed before browsing.';
- }else{
-  let count='unknown';
-  try{const m=await C.manifest(handle);count=String(m.total);}catch{count='unknown';}
-  if(handle!==root||version!==selectionVersion)return;
-  $('rootSetupInfo').textContent=modern
-   ?'Email Archiver found in /'+handle.name+'/. Check existing to verify saved HTML and catalog entries.'
-   :'Existing root-level archive found. It will be extended without replacing its index.html.';
-  $('catalogStatus').textContent='Archive selected · '+count+' messages indexed. Choose Check existing for a deeper inspection.';
- }
  ready();
+ await readCatalog();
 }
 function setRoot(handle,{recent=false}={}){
- root=handle;readerPreview=0;rootUnsafe=false;rootIsNew=false;rootHasAccounts=false;rootAccountsResolved=false;rootProbing=!!handle;
- $('rootSetup').hidden=!handle;
- $('createArchive').hidden=true;
- $('rootOpenInfo').hidden=true;
- $('rootSetupInfo').textContent=handle?'Checking archive entry files…':'';
- $('catalogStatus').textContent=handle?'Checking archive entry files (no catalog scan)…':'Choose an archive root to check saved catalog entries.';
+ // One application instance always has exactly one active data root.
+ closeMessage();
+ root=handle;readerPreview=0;rootUnsafe=false;rootIsNew=false;
+ rootHasAccounts=false;rootAccountsResolved=false;rootProbing=!!handle;
+ all=[];matches=[];records.clear();cache.clear();catalog=null;queryVersion++;
+ $('rows').replaceChildren();
+ $('activeRootInfo').textContent=handle?'Loading data folder /'+handle.name+'/…':'Local demo archive';
+ $('resultInfo').textContent='Loading selected data folder…';
+ $('catalogStatus').textContent=handle?'Reading saved catalog from /'+handle.name+'/…':'Choose a data folder to browse your own messages.';
  $('existingProgressPanel').hidden=true;
  $('previewReaders').disabled=!handle||busy||repairBusy||readerBusy;
  $('upgradeReaders').disabled=true;
- $('readerStatus').textContent='Back up the archive before updating saved message pages.';
+ $('readerStatus').textContent='Check existing to inspect the selected data folder (read-only).';
  void updateRootInfo(handle,{recent});
  if(handle){
   void quickRootCheck(handle).catch(e=>{
    if(handle!==root)return;
    rootUnsafe=true;rootProbing=false;
-   $('rootSetup').hidden=false;
-   $('rootSetupInfo').textContent='Could not inspect this folder: '+errorText(e)+'. No files were changed.';
-   $('catalogStatus').textContent='Unable to verify archive entry files.';
+   $('catalogStatus').textContent='Could not open selected data folder: '+errorText(e)+'. No files were changed.';
+   $('activeRootInfo').textContent='Cannot read /'+handle.name+'/ — choose the folder again.';
+   $('resultInfo').textContent='Unable to load data catalog.';
    ready();
   });
   void loadRootAccounts(handle);
- }else $('accountInfo').textContent='Choose an archive root to load existing accounts.';
+ }else{
+  $('accountInfo').textContent='Choose a data folder to load existing accounts.';
+  void readCatalog().catch(showBrowseError);
+ }
  ready();
 }
 async function loadRecent(){
