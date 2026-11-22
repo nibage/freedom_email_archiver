@@ -10,7 +10,7 @@ function json(x){return JSON.stringify(x).replace(/</g,'\\u003c').replace(/\u202
 function wrap(x){return 'MailArchive.receive('+json(x)+');\n';}
 function unwrap(x){const m=/^MailArchive\.receive\(([\s\S]*)\);\s*$/.exec(x);if(!m)throw Error('FORMAT');return JSON.parse(m[1]);}
 function safeName(s){let v=norm(s||'attachment').replace(/[\x00-\x1f\x7f<>:"/\\|?*\u202a-\u202e\u2066-\u2069]/g,'_').replace(/[. ]+$/g,'');v=Array.from(v).slice(0,100).join('');if(!v||/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(v))v='file_'+v;return v;}
-function accountName(s){if(!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(s)||/^(assets|catalog|con|prn|aux|nul|com[0-9]|lpt[0-9])$/.test(s))throw Error('ACCOUNT');return s;}
+function accountName(s){if(!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(s)||/^(assets|catalog|archived_emails|con|prn|aux|nul|com[0-9]|lpt[0-9])$/.test(s))throw Error('ACCOUNT');return s;}
 async function directory(root,p,create=false){let d=root;for(const x of p.split('/').filter(Boolean)){if(x==='.'||x==='..'||/[\\:\x00-\x1f]/.test(x))throw Error('PATH');d=await d.getDirectoryHandle(x,{create});}return d;}
 async function fileHandle(root,p,create=false){const i=p.lastIndexOf('/');const d=await directory(root,i<0?'':p.slice(0,i),create);const n=p.slice(i+1);if(!n||/[\\:\x00-\x1f]/.test(n)||n==='..')throw Error('PATH');return d.getFileHandle(n,{create});}
 async function write(root,p,value){const f=await fileHandle(root,p,true);const w=await f.createWritable();try{await w.write(value);await w.close();}catch(e){try{await w.abort();}catch{}throw e;}}
@@ -25,7 +25,7 @@ async function catalogPaths(root){
  // Data-only folders do not need a copy of this application, index.html or assets/.
  // Keep pre-existing nested and root-level archive catalog layouts readable in place.
  if(await exists(root,DATA_MANIFEST)||await exists(root,DATA_PREVIOUS))
-  return {current:DATA_MANIFEST,previous:DATA_PREVIOUS,viewerDir:''};
+  return {current:DATA_MANIFEST,previous:DATA_PREVIOUS,viewerDir:'',linkBackDir:'../'};
  if(await exists(root,MANIFEST)||await exists(root,PREVIOUS)||
     await exists(root,VIEWER_DIR+'index.html'))
   return {current:MANIFEST,previous:PREVIOUS,viewerDir:VIEWER_DIR};
@@ -35,7 +35,7 @@ async function catalogPaths(root){
   const html=await read(root,'index.html');
   if(html.includes('assets/core.js'))return {current:LEGACY_MANIFEST,previous:LEGACY_PREVIOUS,viewerDir:''};
  }
- return {current:DATA_MANIFEST,previous:DATA_PREVIOUS,viewerDir:''};
+ return {current:DATA_MANIFEST,previous:DATA_PREVIOUS,viewerDir:'',linkBackDir:'../'};
 }
 async function manifest(root){
  const paths=await catalogPaths(root);
@@ -138,7 +138,7 @@ class Importer{
  }
  async run(files,account){accountName(account);await this.lock();try{await this.open();this.stats.totalBytes=files.reduce((s,f)=>s+f.size,0);let base=0;
   for(const file of files){if(this.signal?.aborted)break;try{for await(const raw of mbox(file,{signal:this.signal,onBytes:n=>{this.stats.bytes=base+n;}})){
-   if(this.signal?.aborted)break;this.stats.read++;let p;try{if(raw.error)throw Error(raw.error);p=await prepare(raw.bytes,account,0,this.paths.viewerDir,{lazy:true});}catch(e){this.stats.errors++;this.issues.push({file:file.name,offset:raw.offset,end:raw.end,code:['MESSAGE_TOO_LARGE','MALFORMED'].includes(e.message)?e.message:'MIME_ERROR'});this.onProgress({...this.stats});continue;}
+   if(this.signal?.aborted)break;this.stats.read++;let p;try{if(raw.error)throw Error(raw.error);p=await prepare(raw.bytes,account,0,this.paths.linkBackDir||this.paths.viewerDir,{lazy:true});}catch(e){this.stats.errors++;this.issues.push({file:file.name,offset:raw.offset,end:raw.end,code:['MESSAGE_TOO_LARGE','MALFORMED'].includes(e.message)?e.message:'MIME_ERROR'});this.onProgress({...this.stats});continue;}
    const key=account+'/'+p.meta.id,old=this.records.get(key);
    let original=old?.original||null,originalChanged=false;
    // Save and checksum-verify the EML before publishing a reference in HTML/catalog.
