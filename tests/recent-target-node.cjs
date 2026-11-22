@@ -6,6 +6,8 @@ const html=fs.readFileSync(path.join(__dirname,'../index.html'),'utf8');
 assert(!html.includes('id="chooseDir"')&&!html.includes('id="browseChooseRoot"'),'No arbitrary data-root picker');
 assert(!html.includes('id="rootOpenInfo"')&&!html.includes('id="createArchive"'),'No self-copy/launcher messaging');
 assert(html.includes('archived_emails/')&&html.includes('id="files"'),'Fixed archive path and MBOX chooser');
+assert(html.includes('id="connectArchive"'),'Archive permission setup must be explicit and separate from Import and Check.');
+assert(!src.slice(src.indexOf('async function ensureArchive'),src.indexOf("$('connectArchive').onclick")).includes('showDirectoryPicker('),'Import and Check may not open a directory chooser.');
 assert(!src.includes('ArchiveBundle')&&!src.includes('await install('),'No installer or app self-copy');
 assert(src.includes('archived_emails/catalog/archive.js'),'Read-only file:// catalog loading needs a fixed local path');
 const id='a'.repeat(64),account='personal',folder='personal/2025/2025-01';
@@ -23,7 +25,7 @@ function elem(tag,id){return {tagName:tag,id,children:[],value:id==='pageSize'?'
 const elements=new Map(),el=id=>{if(!elements.has(id))elements.set(id,elem('element',id));return elements.get(id);};
 const appDirName='email_archiver_root',data={name:'archived_emails',kind:'directory',
  async *entries(){yield ['personal',{kind:'directory'}];}};
-let created=0,selected=null,option=null,writeCount=0,foreignAttempt=0;
+let created=0,selected=null,option=null,pickerCalls=0,writeCount=0,foreignAttempt=0;
 const parent={name:appDirName,kind:'directory',
  async queryPermission(){return 'granted';},
  async getDirectoryHandle(name,{create=false}={}){assert.equal(name,'archived_emails');if(create)created++;return data;}};
@@ -36,7 +38,7 @@ const document={getElementById:el,documentElement:{getAttribute(){return 'light'
    p==='archived_emails/personal/catalog/data.js'?{kind:'metadata',records:[record]}:null;
   queueMicrotask(()=>{if(value){window.MailArchive.receive(value);script.onload?.();}else script.onerror?.();});
  }}};
-const window={scrollY:0,scrollTo(){},addEventListener(){},showDirectoryPicker:async opts=>{option=opts;selected=currentChoice;return selected;}};
+const window={scrollY:0,scrollTo(){},addEventListener(){},showDirectoryPicker:async opts=>{pickerCalls++;option=opts;selected=currentChoice;return selected;}};
 const saved=new Map(),database={close(){},transaction(){const tx={objectStore(){return {
  get(key){const r={};queueMicrotask(()=>{r.result=saved.get(key);r.onsuccess?.();});return r;},
  put(value,key){saved.set(key,value);queueMicrotask(()=>tx.oncomplete?.());}};}};return tx;}};
@@ -83,10 +85,21 @@ async function settled(test){for(let i=0;i<30&&!test();i++)await tick();assert(t
  el('files').files=[{name:'fictional.mbox',size:100}];el('files').onchange();
  assert.equal(el('start').disabled,false,'MBOX is enough to enable Start import');
  await el('start').onclick();
+ assert.equal(pickerCalls,0,'Import without permission must not open a folder chooser');
+ assert.equal(el('status').textContent,'Import not started');
+ assert.match(el('operationNotice').textContent,/Enable archive access/);
+ await el('previewReaders').onclick();
+ assert.equal(pickerCalls,0,'Check existing must not show the OS folder picker');
+ assert.match(el('readerStatus').textContent,/Enable archive access/);
+ await el('connectArchive').onclick();
+ assert.equal(pickerCalls,1,'Connect action asks for app root exactly once');
  assert.equal(option.mode,'readwrite');
  assert.equal(option.id,'email-archiver-app');
  assert.equal(selected,parent,'Only the own app folder is authorized');
  assert.equal(created,1,'Only archived_emails/ may be created under app root');
+ assert.match(el('accessStatus').textContent,/Archive access ready/);
+ await el('start').onclick();
+ assert.equal(pickerCalls,1,'Import reuses authorized archived_emails without another chooser');
  assert.deepEqual(calls.slice(0,3),['sync','update','mbox:personal'],'Import must index/refresh before MBOX');
  assert.equal(writeCount,0,'No index.html/assets may be rewritten');
  assert.match(el('status').textContent,/complete/i);
@@ -94,6 +107,7 @@ async function settled(test){for(let i=0;i<30&&!test();i++)await tick();assert(t
  calls.length=0;
  await el('previewReaders').onclick();
  assert(calls.includes('check')&&calls.includes('preview'));
+ assert.equal(pickerCalls,1,'Existing scan stays under archived_emails without another chooser');
  assert.equal(el('upgradeReaders').disabled,false);
  await el('upgradeReaders').onclick();
  assert.deepEqual(calls.slice(-2),['update','rebuild']);
@@ -106,7 +120,8 @@ async function settled(test){for(let i=0;i<30&&!test();i++)await tick();assert(t
  assert(!html.includes('Choose data folder'));
  assert.equal(window.ArchiveUI.root,old,'No control can switch the active data root');
  console.log('PASS file:// Browse uses archived_emails/ without permissions');
- console.log('PASS Start import authorizes only app folder and writes beneath archived_emails/');
+ console.log('PASS Start import and Check existing never open the folder chooser; one explicit grant is reused');
+ console.log('PASS authorized import writes only beneath archived_emails/');
  console.log('PASS Reimport only existing always runs full index rebuild, even with 0 eligible old viewers');
  console.log('PASS no arbitrary folder selector or app-copy controls');
 })().catch(e=>{console.error(e);process.exitCode=1;});

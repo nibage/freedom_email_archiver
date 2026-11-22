@@ -191,7 +191,8 @@ async function loadRootAccounts(handle){
  const select=$('importAccountSelect'),prior=select.value,sorted=[...names].sort();
  select.replaceChildren(...sorted.map(a=>new Option(a,a)),new Option('+ New account…','__new__'));
  const wanted=accountTouched?prior:preferredAccount;
- select.value=names.has(wanted)?wanted:sorted.length?sorted[0]:'__new__';
+ // Never choose the fictional 'example' account automatically for someone's real MBOX.
+ select.value=names.has(wanted)?wanted:(sorted.find(a=>a!=='example')||'__new__');
  if(select.value==='__new__'&&!accountTouched)$('importAccount').value=preferredAccount;
  showNewAccount();
  $('accountInfo').textContent=names.size
@@ -207,50 +208,63 @@ async function validateAppParent(handle){
  if(!await C.exists(handle,'assets/core.js'))throw Error('WRONG_APP_ROOT');
  return handle;
 }
-async function allowRoot(handle,mode='readwrite'){
- if(!handle)throw Error('APP_PERMISSION');
- if(typeof handle.queryPermission!=='function')return;
- if(await handle.queryPermission({mode})==='granted')return;
- if(typeof handle.requestPermission==='function'&&
-    await handle.requestPermission({mode})==='granted')return;
- throw Error('APP_PERMISSION');
+async function permissionGranted(handle,mode){
+ if(!handle)return false;
+ if(typeof handle.queryPermission!=='function')return true;
+ try{return await handle.queryPermission({mode})==='granted';}catch{return false;}
 }
 async function bindParent(parent,{create=false}={}){
  await validateAppParent(parent);
  const data=await parent.getDirectoryHandle('archived_emails',{create});
- parentHandle=parent;recentParent=parent;
- root=data;selectionVersion++;
- $('accessStatus').textContent='Application folder authorized: /'+parent.name+
-  '/. All mail is read/written only within archived_emails/.';
+ parentHandle=parent;recentParent=parent;root=data;selectionVersion++;
  await dbPut(folderPreference,parent);
- await readCatalog();
+ try{await readCatalog();}
+ catch(e){browseNotice('The current archive index needs repair: '+errorText(e));}
  await loadRootAccounts(data);
+ const canWrite=await permissionGranted(parent,'readwrite');
+ $('accessStatus').textContent=canWrite
+  ?'Archive access ready: /'+parent.name+'/archived_emails/. Import and Check existing will not ask for a folder.'
+  :'Read access restored for archived_emails/. Click Enable archive access to permit importing and rebuilding.';
  return data;
 }
 async function ensureArchive({write=false}={}){
- const mode=write?'readwrite':'read';
- if(root&&parentHandle){
-  await allowRoot(parentHandle,mode);
-  return root;
- }
- if(!window.showDirectoryPicker)throw Error('BROWSER');
- const opts={mode,id:'email-archiver-app'};
- if(recentParent)opts.startIn=recentParent;
- // The user selects the folder CONTAINING the opened index.html, never a data root.
- const selected=await window.showDirectoryPicker(opts);
- await validateAppParent(selected);
- if(write)await allowRoot(selected,'readwrite');
- try{
-  return await bindParent(selected,{create:write});
- }catch(e){
-  if(!write&&e.name==='NotFoundError'){
-   parentHandle=selected;recentParent=selected;
-   $('accessStatus').textContent='No archived_emails/ folder yet. Start import creates it next to index.html.';
-   return null;
-  }
-  throw e;
- }
+ // No picker, permission request, or directory selection is permitted here.
+ // Those actions belong only to the explicit Enable archive access button.
+ const parent=parentHandle||recentParent;
+ if(!parent||!await permissionGranted(parent,write?'readwrite':'read'))
+  throw Error('ARCHIVE_ACCESS_REQUIRED');
+ if(root&&parent===parentHandle)return root;
+ return bindParent(parent,{create:false});
 }
+$('connectArchive').onclick=async()=>{
+ if(busy||repairBusy||readerBusy)return;
+ $('connectArchive').disabled=true;
+ $('accessStatus').textContent='Authorizing only this application folder…';
+ try{
+  let parent=parentHandle||recentParent;
+  if(parent){
+   try{await validateAppParent(parent);}
+   catch{parent=null;} // A portable archive may have moved; allow explicit reauthorization.
+  }
+  if(!parent){
+   if(!window.showDirectoryPicker)throw Error('BROWSER');
+   // The only directory chooser in the program: explicit one-time setup.
+   parent=await window.showDirectoryPicker({mode:'readwrite',id:'email-archiver-app'});
+   await validateAppParent(parent);
+  }
+  if(!await permissionGranted(parent,'readwrite')){
+   if(typeof parent.requestPermission!=='function'||
+      await parent.requestPermission({mode:'readwrite'})!=='granted')
+    throw Error('APP_PERMISSION');
+  }
+  await bindParent(parent,{create:true});
+  $('connectArchive').textContent='Renew archive access';
+ }catch(e){
+  $('accessStatus').textContent=e.name==='AbortError'
+   ?'Archive authorization cancelled. No files were changed.'
+   :'Archive access not enabled: '+errorText(e);
+ }finally{$('connectArchive').disabled=false;}
+};
 async function loadRecent(){
  let db;
  try{
@@ -265,7 +279,8 @@ async function loadRecent(){
    try{permitted=typeof handle.queryPermission!=='function'||
      await handle.queryPermission({mode:'read'})==='granted';}catch{}
    if(permitted&&!root){
-    try{await bindParent(handle);}catch{/* No permission prompt and no automatic creation. */}
+    try{await bindParent(handle);if(await permissionGranted(handle,'readwrite'))$('connectArchive').textContent='Renew archive access';}
+    catch{/* No permission prompt and no automatic creation. */}
    }
   }
  }catch{/* Browser profile storage may be disabled for file:// */}
@@ -283,7 +298,7 @@ $('start').onclick=async()=>{
  if(!sourceFiles.length){notice('Choose at least one MBOX file first.');return;}
  let target,acc;
  $('progressPanel').hidden=false;$('status').textContent='Authorizing this archive folder…';
- $('progressDetail').textContent='Select the folder containing this index.html if Chrome asks.';
+ $('progressDetail').textContent='Preparing archived_emails/. Authorization is managed separately above.';
  notice('');
  try{
   target=await ensureArchive({write:true});
@@ -347,7 +362,8 @@ $('stop').onclick=()=>{
 };
 function errorText(e){
  const msgs={
-  APP_PERMISSION:'Chrome needs permission to the application folder before modifying archived_emails/. Run the action again and allow write access.',
+  APP_PERMISSION:'Write permission was not granted. Click Enable archive access, then select/authorize the folder containing this index.html.',
+  ARCHIVE_ACCESS_REQUIRED:'Click Enable archive access once to authorize archived_emails/. Start import and Check existing never open a folder chooser.',
   WRONG_APP_ROOT:'Choose the folder containing the index.html you opened (/'+parentName+'/), not archived_emails/ or a different archive.',
   RECENT_ACCESS:'Permission to the application folder expired. Run the action and authorize the same app folder again.',
   ARCHIVE_LOCK_TIMEOUT:'Could not acquire the archive write lock. Close other writing tabs and check syncing.',

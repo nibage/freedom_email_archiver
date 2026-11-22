@@ -2,7 +2,7 @@
 
 A self-contained, offline archive of exported MBOX email. **The application always uses its own `archived_emails/` folder.** It never selects a different data root, copies itself into another folder or runs a server.
 
-This public repository contains fictional examples only; do not put real mail in a Git checkout you publish.
+The public repository ships four fictional demonstration messages and their attachments under `archived_emails/example/`, with the demonstration catalog under `archived_emails/catalog/`. Do not put real mail in a Git checkout you publish.
 
 ## Directory structure
 
@@ -15,6 +15,9 @@ email_archiver_root/
     ├── catalog/
     │   ├── archive.js         ← Current searchable manifest
     │   └── archive.previous.js
+    ├── example/                ← Four fictional demonstration messages
+    │   ├── catalog/
+    │   └── 2025/
     ├── personal/
     │   ├── catalog/           ← Metadata and search shards
     │   ├── 2024/
@@ -39,13 +42,13 @@ Click a message to read it. Without a granted folder handle, it opens its standa
 
 ## Importing an MBOX
 
-1. In the application, click **Import**, choose one or more MBOX files, and choose an existing account or **+ New account…**.
-2. Click **Start import**. It is enabled as soon as an MBOX has been selected; it does **not** require a previous folder-selection step.
-3. The first time a write is needed, Chrome/Edge may display a folder picker: choose the **same `email_archiver_root/` folder that contains the `index.html` you opened**. The program checks the folder name and required app files and then obtains access to **only `archived_emails/`**. It refuses unrelated selected folders. Browser permissions may need renewal after a move or profile reset.
+1. Before importing or scanning existing files for the first time, click **Enable archive access**. Chrome/Edge will ask you to select the **folder containing the opened `index.html`** (for example `email_archiver_root/`), **not** the MBOX and **not** the `archived_emails/` subfolder. This is a one-time authorization for reading/writing `archived_emails/`, not a separate data-root choice.
+2. Choose one or more MBOX files through the MBOX file selector, and select an existing account or **+ New account…**.
+3. Click **Start import**. Once the archive is authorized, it begins processing without opening another folder/file picker. If authorization is missing or expired, a clear status asks you to use **Enable archive access**; it never silently launches a chooser.
 4. The program checks and recovers saved indexes, refreshes eligible older HTML reader shells, then imports the MBOX to `archived_emails/<account>/`. Counters and progress show each phase and any error. MBOX source files are never modified.
 5. Go back to Browse. New messages appear in this **same** application; there is no second `index.html` to open.
 
-The one-time operating-system permission picker **cannot safely be bypassed by a local HTML page**. It grants access to the application directory; it is not a data-root selector. Chrome does not disclose an absolute filesystem path to the page, so the application checks the folder's name and files rather than claiming to verify the absolute path.
+The one-time operating-system permission picker **cannot safely be bypassed by a local HTML page** and is used only by **Enable archive access**, never by **Start import**, **Check existing** or **Reimport only existing**. It grants access to the application directory; it is not a data-root selector. Chrome does not disclose an absolute filesystem path to the page, so the application checks the folder's name and files rather than claiming to verify the absolute path.
 
 ## Copying, replacing or merging saved email folders
 
@@ -56,13 +59,13 @@ Click **Reimport only existing**. This performs two explicit operations, even if
 - Refresh recognized older HTML message-viewer shells without rewriting the sender's original saved body or attachments.
 - **Fully rebuild** the master catalog and text-search indexes by scanning the HTML files actually present under all accounts. This adds newly copied files and drops stale index references to files that have been removed or moved, without deleting emails. The old catalog remains published until the new one validates. Corrupted or unsupported HTML is reported; an incomplete rebuild is not published.
 
-**Check existing** is read-only and reports unindexed HTML, missing catalog entries and older viewer eligibility. It requires read-only filesystem permission to the same app folder because a `file://` page cannot enumerate directories by itself. Reimport only existing works with **no MBOX file selected**, and is **never disabled just because no older viewers are eligible**.
+**Check existing** scans **only `archived_emails/`** and is read-only: it reports unindexed HTML, missing catalog entries and older viewer eligibility. It requires a previously authorized folder handle because a `file://` page cannot enumerate directories by itself. Click **Enable archive access** first; **Check existing** will not open a picker. Reimport only existing works with **no MBOX file selected**, and is **never disabled just because no older viewers are eligible**.
 
 A new MBOX import uses *incremental* catalog recovery, keeping previously saved mail even when omitted from the new export. A deliberate full rebuild, by contrast, reflects files physically present in `archived_emails/`.
 
 ### Recovering from a deleted `__email_archiver` folder
 
-If you still have `account/year/month/email-*.html` files and attachments from an older archive but deleted its separate `__email_archiver/` program/index folder, first back them up. Place **only the account folders** inside the new `email_archiver_root/archived_emails/` folder, retaining year/month and attachment subfolders. Do not copy an old root-level app or `__email_archiver/` into the new app. Then open the new `index.html`, choose **Reimport only existing**, and authorize the app root if prompted. It reconstructs a fresh catalog from the saved HTML, or explains if damaged files prevent recovery.
+If you still have `account/year/month/email-*.html` files and attachments from an older archive but deleted its separate `__email_archiver/` program/index folder, first back them up. Place **only the account folders** inside the new `email_archiver_root/archived_emails/` folder, retaining year/month and attachment subfolders. Do not copy an old root-level app or `__email_archiver/` into the new app. Then open the new `index.html`, click **Enable archive access** once, and choose **Reimport only existing**. It reconstructs a fresh catalog from the saved HTML, or explains if damaged files prevent recovery.
 
 ## Backup and browser support
 
