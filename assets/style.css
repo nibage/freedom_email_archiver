@@ -142,3 +142,19 @@ footer{justify-content:flex-end}
 .root-setup code{background:var(--surface);border:1px solid var(--line);
  border-radius:4px;padding:1px 4px}
 #rootOpenInfo{color:var(--muted);overflow-wrap:anywhere}
+
+/* One application instance, one selected data folder: no nested installation UI. */
+.active-archive{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+ margin-bottom:14px;padding:12px 16px;border:1px solid var(--line);background:var(--surface);
+ border-radius:10px;color:var(--muted);font-size:13px}
+.active-archive button{flex:0 0 auto}
+.data-root-description{font-size:13px;line-height:1.6;color:var(--muted);margin-top:0}
+#messageViewer{margin:0 0 18px}
+.message-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+ padding:12px 16px;background:var(--surface);border:1px solid var(--line);
+ border-radius:10px 10px 0 0}
+#messageInfo{font-size:13px;color:var(--muted);overflow-wrap:anywhere;flex:1}
+#messageFrame{display:block;width:100%;height:78vh;min-height:460px;
+ border:1px solid var(--line);border-top:0;border-radius:0 0 10px 10px;
+ background:var(--surface)}
+@media(max-width:760px){#messageFrame{height:74vh;min-height:420px}}
