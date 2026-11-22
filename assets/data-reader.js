@@ -48,7 +48,9 @@ async function open(root,record,{theme='light',autoImages=false}={}){
  doc.documentElement.setAttribute('data-theme',theme==='dark'?'dark':'light');
  const urls=[],mapped=new Map();
  async function attachment(href){
-  if(!g.ArchiveReindex.safeAttachmentHref(href))return null;
+  const isOriginal=href==='originals/email-'+record.id+'.eml'&&
+   stored.original?.href===href;
+  if(!isOriginal&&!g.ArchiveReindex.safeAttachmentHref(href))return null;
   const path=record.folder+'/'+decodeURIComponent(href);
   if(mapped.has(path))return mapped.get(path);
   try{
@@ -78,7 +80,7 @@ async function open(root,record,{theme='light',autoImages=false}={}){
  }
  for(const anchor of doc.querySelectorAll('a[href]')){
   const href=(anchor.getAttribute('href')||'').trim();
-  if(href.startsWith('attachments/')){
+  if(href.startsWith('attachments/')||href==='originals/email-'+record.id+'.eml'){
    const url=await attachment(href);
    if(url){anchor.setAttribute('href',url);anchor.setAttribute('download',anchor.getAttribute('download')||'attachment');anchor.removeAttribute('target');}
    else anchor.removeAttribute('href');
