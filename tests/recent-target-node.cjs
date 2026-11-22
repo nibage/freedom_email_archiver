@@ -75,7 +75,7 @@ const ArchiveDataReader={async open(root,r){openedRecords.push({root,subject:r.s
  url:'blob:synthetic-message',hasRemoteImages:false,dispose(){disposed++;}};}};
 vm.runInNewContext(source,{window,document,location:{pathname:'/apps/freedom/index.html'},
  ArchiveCore:C,ArchiveReindex,ArchiveReaderUpgrade,ArchiveDataReader,ArchiveBundle:undefined,
- indexedDB,Option:function Option(text,value){return {text,value};},
+ indexedDB,showDirectoryPicker:window.showDirectoryPicker,Option:function Option(text,value){return {text,value};},
  sessionStorage:{getItem(){return null;},setItem(){},removeItem(){}},
  setTimeout,clearTimeout,requestAnimationFrame:fn=>fn(),AbortController,console},{filename:'assets/app.js'});
 async function tick(){await new Promise(r=>setTimeout(r,0));}
