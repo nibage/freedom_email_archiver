@@ -123,13 +123,14 @@ function tab(which){
 }
 $('browseTab').onclick=()=>tab('browse');
 $('importTab').onclick=()=>tab('import');
-function ready(){$('start').disabled=busy||repairBusy||readerBusy||rootUnsafe||rootProbing||!rootAccountsResolved||!root||!$('files').files.length;}
-// Each opened index.html has its own remembered root/account. No global "last" folder.
+function ready(){
+ $('start').disabled=busy||repairBusy||readerBusy||!$('files').files.length;
+}
 const viewerKey=location.pathname;
-const folderPreference='self-root:'+viewerKey,accountPreference='account:'+viewerKey;
-const viewerParts=decodeURIComponent(viewerKey).split('/').filter(Boolean);
-const selfRootName=viewerParts[nestedViewer?viewerParts.length-3:viewerParts.length-2]||'archive';
-let recentRoot=null,selectionVersion=0,accountTouched=false,preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null,rootUnsafe=false,rootIsNew=false,rootHasAccounts=false,rootAccountsResolved=false,rootProbing=false;
+const folderPreference='app-root:'+viewerKey,accountPreference='account:'+viewerKey;
+const parentName=decodeURIComponent(viewerKey).split('/').filter(Boolean).slice(-2,-1)[0]||'email_archiver_root';
+let parentHandle=null,recentParent=null,selectionVersion=0,accountTouched=false;
+let preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null;
 function recentDB(){
  return new Promise((resolve,reject)=>{
   let request;try{request=indexedDB.open('offline-email-archiver-folders',1);}catch(e){reject(e);return;}
@@ -145,21 +146,25 @@ function dbGet(db,key){
   request.onerror=()=>reject(request.error);
  });
 }
-async function rememberAccount(value){
- try{C.accountName(value);}catch{return;}
+async function dbPut(key,value){
  let db;
  try{
   db=await recentDB();
   await new Promise((resolve,reject)=>{
    const transaction=db.transaction('recent','readwrite');
    transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error);
-   transaction.objectStore('recent').put(value,accountPreference);
+   transaction.objectStore('recent').put(value,key);
   });
- }catch{/* Browser profile storage may be disabled for local files. */}
+ }catch{/* File-based browser storage is optional. */}
  finally{db?.close();}
 }
+async function rememberAccount(value){
+ try{C.accountName(value);}catch{return;}
+ await dbPut(accountPreference,value);
+}
 function selectedAccount(){
- return C.accountName(($('importAccountSelect').value==='__new__' ? $('importAccount').value : $('importAccountSelect').value).trim());
+ return C.accountName(($('importAccountSelect').value==='__new__'
+  ?$('importAccount').value:$('importAccountSelect').value).trim());
 }
 function showNewAccount(){
  const isNew=$('importAccountSelect').value==='__new__';
@@ -168,152 +173,107 @@ function showNewAccount(){
  ready();
 }
 $('importAccountSelect').addEventListener('change',()=>{accountTouched=true;showNewAccount();});
-$('importAccount').addEventListener('input',()=>{accountTouched=true;});
-$('importAccount').addEventListener('change',()=>{try{preferredAccount=C.accountName($('importAccount').value.trim());void rememberAccount(preferredAccount);}catch{}});
+$('importAccount').addEventListener('input',()=>{accountTouched=true;ready();});
+$('importAccount').addEventListener('change',()=>{
+ try{preferredAccount=C.accountName($('importAccount').value.trim());void rememberAccount(preferredAccount);}catch{}
+});
 async function loadRootAccounts(handle){
- if(!handle||handle!==root)return;
  const version=selectionVersion,names=new Set();
- try{
+ for(const a of catalog?.accounts||[]){try{names.add(C.accountName(a));}catch{}}
+ if(handle){
   const m=await C.manifest(handle);
   for(const a of m.accounts||[]){try{names.add(C.accountName(a));}catch{}}
-  for await(const [name,entry] of handle.entries()){
+  for await(const [name,entry] of handle.entries())
    if(entry.kind==='directory')try{names.add(C.accountName(name));}catch{}
-  }
- }catch{
-  // A remembered self handle without access may still use the viewer's known accounts.
-  for(const a of catalog?.accounts||[])try{names.add(C.accountName(a));}catch{}
  }
- if(handle!==root||version!==selectionVersion)return;
- rootHasAccounts=names.size>0;rootAccountsResolved=true;
+ if(version!==selectionVersion||handle!==root)return;
  const select=$('importAccountSelect'),prior=select.value,sorted=[...names].sort();
  select.replaceChildren(...sorted.map(a=>new Option(a,a)),new Option('+ New account…','__new__'));
  const wanted=accountTouched?prior:preferredAccount;
  select.value=names.has(wanted)?wanted:sorted.length?sorted[0]:'__new__';
- if(select.value==='__new__')$('importAccount').value=preferredAccount;
+ if(select.value==='__new__'&&!accountTouched)$('importAccount').value=preferredAccount;
  showNewAccount();
- $('accountInfo').textContent=names.size?names.size+' existing account folder(s) found. Select one, or choose New.':'No existing accounts found. Enter a new account folder name.';
+ $('accountInfo').textContent=names.size
+  ?names.size+' account folder(s) in archived_emails/. Select one or choose New.'
+  :'No indexed accounts yet. New emails will be saved under archived_emails/<account>/.';
 }
-
-function rootPathLabel(handle){return handle?.name?handle.name+'/':'(none)';}
-async function updateRootInfo(handle){
- // A browser directory handle exposes only its folder name, never the absolute path.
- // The label stays concise and never suggests that a root was authorized automatically.
- if(!handle){
-  $('dirInfo').textContent='Currently selected: none';
-  $('accountInfo').textContent='Choose an archive root to load existing accounts.';
-  return;
- }
- const name='/'+handle.name+'/';
- $('dirInfo').textContent='Currently selected: '+name;
-
+async function validateAppParent(handle){
+ // A page opened via file:// cannot get an OS handle for its own location.
+ // Validate the requested app folder, refusing arbitrary email/data directories.
+ if(!handle||handle.kind!=='directory'||handle.name!==parentName)throw Error('WRONG_APP_ROOT');
+ const index=await C.read(handle,'index.html');
+ if(!index.includes('assets/app.js')||!index.includes('archived_emails/'))throw Error('WRONG_APP_ROOT');
+ if(!await C.exists(handle,'assets/core.js'))throw Error('WRONG_APP_ROOT');
+ return handle;
 }
-async function quickRootCheck(handle){
- const version=selectionVersion;
- const m=await C.manifest(handle);
- if(handle!==root||version!==selectionVersion)return;
- rootProbing=false;rootUnsafe=false;rootIsNew=!(m.segments?.length||m.total);
- $('catalogStatus').textContent=m.total
-  ?'Data folder loaded · '+m.total+' indexed messages. Use Check existing for a deeper scan.'
-  :'Data folder loaded with no catalog entries. New imports write data and indexes here; no application files are copied.';
- $('previewReaders').disabled=busy||repairBusy||readerBusy;
- $('upgradeReaders').disabled=true;
- ready();
+async function allowRoot(handle,mode='readwrite'){
+ if(!handle)throw Error('APP_PERMISSION');
+ if(typeof handle.queryPermission!=='function')return;
+ if(await handle.queryPermission({mode})==='granted')return;
+ if(typeof handle.requestPermission==='function'&&
+    await handle.requestPermission({mode})==='granted')return;
+ throw Error('APP_PERMISSION');
+}
+async function bindParent(parent,{create=false}={}){
+ await validateAppParent(parent);
+ const data=await parent.getDirectoryHandle('archived_emails',{create});
+ parentHandle=parent;recentParent=parent;
+ root=data;selectionVersion++;
+ $('accessStatus').textContent='Application folder authorized: /'+parent.name+
+  '/. All mail is read/written only within archived_emails/.';
+ await dbPut(folderPreference,parent);
  await readCatalog();
+ await loadRootAccounts(data);
+ return data;
 }
-function setRoot(handle,{recent=false}={}){
- // One application instance always has exactly one active data root.
- closeMessage();
- root=handle;readerPreview=0;rootUnsafe=false;rootIsNew=false;
- rootHasAccounts=false;rootAccountsResolved=false;rootProbing=!!handle;
- all=[];matches=[];records.clear();cache.clear();catalog=null;queryVersion++;
- $('rows').replaceChildren();
- $('activeRootInfo').textContent=handle?'Loading data folder /'+handle.name+'/…':'Local demo archive';
- $('resultInfo').textContent='Loading selected data folder…';
- $('catalogStatus').textContent=handle?'Reading saved catalog from /'+handle.name+'/…':'Choose a data folder to browse your own messages.';
- $('existingProgressPanel').hidden=true;
- $('previewReaders').disabled=!handle||busy||repairBusy||readerBusy;
- $('upgradeReaders').disabled=true;
- $('readerStatus').textContent='Check existing to inspect the selected data folder (read-only).';
- void updateRootInfo(handle,{recent});
- if(handle){
-  void quickRootCheck(handle).catch(e=>{
-   if(handle!==root)return;
-   rootUnsafe=true;rootProbing=false;
-   $('catalogStatus').textContent='Could not open selected data folder: '+errorText(e)+'. No files were changed.';
-   $('activeRootInfo').textContent='Cannot read /'+handle.name+'/ — choose the folder again.';
-   $('resultInfo').textContent='Unable to load data catalog.';
-   ready();
-  });
-  void loadRootAccounts(handle);
- }else{
-  $('accountInfo').textContent='Choose a data folder to load existing accounts.';
-  void readCatalog().catch(showBrowseError);
+async function ensureArchive({write=false}={}){
+ const mode=write?'readwrite':'read';
+ if(root&&parentHandle){
+  await allowRoot(parentHandle,mode);
+  return root;
  }
- ready();
+ if(!window.showDirectoryPicker)throw Error('BROWSER');
+ const opts={mode,id:'email-archiver-app'};
+ if(recentParent)opts.startIn=recentParent;
+ // The user selects the folder CONTAINING the opened index.html, never a data root.
+ const selected=await window.showDirectoryPicker(opts);
+ await validateAppParent(selected);
+ if(write)await allowRoot(selected,'readwrite');
+ try{
+  return await bindParent(selected,{create:write});
+ }catch(e){
+  if(!write&&e.name==='NotFoundError'){
+   parentHandle=selected;recentParent=selected;
+   $('accessStatus').textContent='No archived_emails/ folder yet. Start import creates it next to index.html.';
+   return null;
+  }
+  throw e;
+ }
 }
 async function loadRecent(){
- const before=selectionVersion;
  let db;
  try{
   db=await recentDB();
   const [handle,account]=await Promise.all([dbGet(db,folderPreference),dbGet(db,accountPreference)]);
   if(typeof account==='string'&&!accountTouched){
-   try{preferredAccount=C.accountName(account);$('importAccount').value=preferredAccount;}catch{/* Ignore stale invalid values. */}
+   try{preferredAccount=C.accountName(account);$('importAccount').value=preferredAccount;}catch{}
   }
-  if(handle?.kind==='directory'&&before===selectionVersion){
-   recentRoot=handle;
-   // Silent restore is allowed only when the browser still grants read permission.
-   // Never prompt automatically during page load.
+  if(handle?.kind==='directory'){
+   recentParent=handle;
    let permitted=false;
    try{permitted=typeof handle.queryPermission!=='function'||
-    await handle.queryPermission({mode:'read'})==='granted';}catch{}
-   if(permitted&&!root)setRoot(handle,{recent:true});
-   else if(!permitted&&!root)$('activeRootInfo').textContent='Previous data folder: /'+handle.name+'/ — choose it again to grant access.';
+     await handle.queryPermission({mode:'read'})==='granted';}catch{}
+   if(permitted&&!root){
+    try{await bindParent(handle);}catch{/* No permission prompt and no automatic creation. */}
+   }
   }
- }catch{/* Recent folder and account storage are optional. */}
- finally{db?.close();if(!root)void updateRootInfo(null);}
+ }catch{/* Browser profile storage may be disabled for file:// */}
+ finally{
+  db?.close();
+  if(!root)try{await loadRootAccounts(null);}catch{}
+ }
 }
-async function rememberRecent(handle){
- recentRoot=handle;
- // One remembered folder per copy of the application, regardless of its name.
- let db;
- try{
-  db=await recentDB();
-  await new Promise((resolve,reject)=>{
-   const transaction=db.transaction('recent','readwrite');
-   transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error);
-   transaction.objectStore('recent').put(handle,folderPreference);
-  });
- }catch{/* The folder is still selected for this session. */}
- finally{db?.close();}
-}
-async function allowRoot(handle,mode='readwrite'){
- if(!handle)throw Error('RECENT_ACCESS');
- if(typeof handle.queryPermission!=='function')return;
- if(await handle.queryPermission({mode})==='granted')return;
- if(typeof handle.requestPermission==='function'&&await handle.requestPermission({mode})==='granted')return;
- throw Error('RECENT_ACCESS');
-}
-function pickRoot(){
- if(!window.showDirectoryPicker)throw Error('BROWSER');
- const options={mode:'read',id:'mailarchive'};
- if(recentRoot)options.startIn=recentRoot;
- return showDirectoryPicker(options);
-}
-async function chooseDataFolder(){
- if(busy||repairBusy||readerBusy)return;
- try{
-  const chosen=await pickRoot();
-  if(chosen.name==='__email_archiver'&&await C.exists(chosen,'index.html'))throw Error('APP_SUBFOLDER');
-  selectionVersion++;
-  setRoot(chosen);
-  void rememberRecent(chosen);
- }catch(e){if(e.name!=='AbortError')showError(e);}
-}
-$('chooseDir').onclick=chooseDataFolder;
-$('browseChooseRoot').onclick=chooseDataFolder;
 void loadRecent();
-
 $('files').onchange=()=>{const files=Array.from($('files').files);$('fileInfo').textContent=files.length+' files · '+(files.reduce((s,f)=>s+f.size,0)/1024**3).toFixed(2)+' GiB. Allow at least this space plus a reserve on the destination drive.';ready();};
 function progress(s){$('progress').value=s.totalBytes?Math.min(100,100*s.bytes/s.totalBytes):0;for(const [id,k] of [['readCount','read'],['newCount','new'],['dupeCount','duplicates'],['refreshedCount','refreshed'],['emlSavedCount','emlSaved'],['emlReusedCount','emlReused'],['errorCount','errors']])$(id).textContent=s[k].toLocaleString('en-GB');$('progressDetail').textContent=(s.bytes/1024**2).toFixed(1)+' / '+(s.totalBytes/1024**2).toFixed(1)+' MiB read · '+s.committed+' changes committed to the catalog';}
 $('start').onclick=async()=>{
