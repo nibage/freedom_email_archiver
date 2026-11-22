@@ -98,10 +98,13 @@ vm.runInNewContext(upgrader, {globalThis:globals,crypto:crypto.webcrypto,TextEnc
   unlock();await new Promise(resolve=>setTimeout(resolve,0));
   assert.equal(lateCloseCount,1,'A late successful lock must be released after timeout');
   const stopped=new AbortController();
+  let waitingForLock=false;
   const aborting=globals.ArchiveReaderUpgrade.refresh({},{
-   write:true,signal:stopped.signal,lockTimeoutMs:1000
+   write:true,signal:stopped.signal,lockTimeoutMs:1000,
+   onProgress:x=>{if(x.phase==='waiting-lock')waitingForLock=true;}
   });
-  await new Promise(resolve=>setTimeout(resolve,0));
+  for(let i=0;i<100&&!waitingForLock;i++)await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(waitingForLock,true,'Cancellation test must first reach a pending lock');
   stopped.abort();
   const cancelledLock=await aborting;
   assert.equal(cancelledLock.interrupted,true,'Cancel must work during a pending lock');
