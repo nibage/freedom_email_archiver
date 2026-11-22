@@ -10,7 +10,9 @@
 !/archive.js
 !/archive.previous.js
 !/assets/
-!/example/
+!/archived_emails/
+# Demo files tracked in Git stay tracked. Never auto-add new real emails or catalogs.
+/archived_emails/**
 !/examples/
 !/scripts/
 !/tests/
