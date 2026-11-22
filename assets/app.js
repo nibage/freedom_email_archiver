@@ -366,13 +366,11 @@ function showBrowseError(e){browseNotice(errorText(e));}
 
 let repairBusy=false,repairController=null;
 function operateControls(active){
- $('chooseDir').disabled=active;
- $('browseChooseRoot').disabled=active;
  $('files').disabled=active;
  $('importAccountSelect').disabled=active;
  $('importAccount').disabled=active;
- $('previewReaders').disabled=active||rootUnsafe||!root;
- $('upgradeReaders').disabled=active||rootUnsafe||!root||!readerPreview;
+ $('previewReaders').disabled=active;
+ $('upgradeReaders').disabled=active;
  ready();
 }
 async function runCatalogSync(target,{signal=null,force=false}={}){
@@ -410,11 +408,9 @@ async function runCatalogSync(target,{signal=null,force=false}={}){
 $('stopReindex').onclick=()=>repairController?.abort();
 
 function readerControls(active){
- $('chooseDir').disabled=active;
- $('browseChooseRoot').disabled=active;
  $('files').disabled=active;
- $('previewReaders').disabled=active||!root;
- $('upgradeReaders').disabled=active||!root||!readerPreview;
+ $('previewReaders').disabled=active;
+ $('upgradeReaders').disabled=active;
  $('importAccountSelect').disabled=active;
  $('importAccount').disabled=active;
  ready();
@@ -476,57 +472,69 @@ async function runExistingUpgrade(target,signal,title){
  }finally{$('stopReaders').hidden=true;}
 }
 $('previewReaders').onclick=async()=>{
- if(!root||rootUnsafe||rootProbing||busy||repairBusy||readerBusy)return;
- const target=root;
- try{await allowRoot(target,'read');}catch(e){showError(e);return;}
- readerBusy=true;readerPreview=0;readerController=new AbortController();
- readerControls(true);$('stopCheck').hidden=false;
+ if(busy||repairBusy||readerBusy)return;
+ let target;
+ $('readerStatus').textContent='Requesting read access to archived_emails/…';
+ try{
+  target=await ensureArchive({write:false});
+  if(!target){
+   $('readerStatus').textContent='No archived_emails/ folder yet. Start import to create it, or copy your account folders there.';
+   $('catalogStatus').textContent='0 saved messages found. No indexes rewritten.';
+   return;
+  }
+ }catch(e){if(e.name!=='AbortError')$('readerStatus').textContent='Check existing could not start: '+errorText(e);return;}
+ readerBusy=true;readerController=new AbortController();readerControls(true);$('stopCheck').hidden=false;
  $('existingProgressPanel').hidden=true;
- $('readerStatus').textContent='Checking saved HTML readers…';
- $('catalogStatus').textContent='Checking existing catalog references (read-only)…';
+ $('readerStatus').textContent='Checking saved HTML in archived_emails/…';
+ $('catalogStatus').textContent='Checking current indexes (read-only)…';
  try{
   const inventory=await ArchiveReindex.checkMissing(target,{
    signal:readerController.signal,
    onProgress:v=>{
-    $('catalogStatus').textContent=v.scanned+' HTML files inspected · '+v.indexed+
-     ' indexed · '+v.missing+' missing entries'+(v.damaged?' · catalog needs repair':'');
+    $('catalogStatus').textContent=v.scanned+' saved HTML files scanned · '+v.indexed+
+     ' indexed · '+v.missing+' missing'+(v.damaged?' · damaged catalog':'');
    }
   });
   if(inventory.interrupted){
-   $('readerStatus').textContent='Check existing stopped. No archive files were changed.';
+   $('readerStatus').textContent='Check existing stopped. No saved files were changed.';
    return;
   }
   $('catalogStatus').textContent=inventory.damaged
-   ?'Some catalog shards are missing or damaged. Start import or Reimport only existing to recover the catalog.'
+   ?'Catalog is missing or damaged. Reimport only existing will rebuild it from saved HTML.'
    :inventory.missing
-    ?inventory.missing+' unindexed saved HTML files found. They will be added before the next import or existing update.'
+    ?inventory.missing+' saved emails are not indexed. Use Reimport only existing to add them.'
     :'Catalog is up to date; '+inventory.indexed+' messages already indexed. No indexes rewritten.';
   const result=await ArchiveReaderUpgrade.refresh(target,{
    signal:readerController.signal,onProgress:x=>{$('readerStatus').textContent=readerStatus(x);}
   });
-  readerPreview=!result.errors&&!result.interrupted?result.eligible:0;
+  readerPreview=result.eligible;
   $('readerStatus').textContent=readerStatus(result)+(result.interrupted?' Check stopped.':
-   result.errors?' Some pages could not be read; check the archive first.':
-   ' Back up the archive before applying the update.');
- }catch(e){readerPreview=0;$('readerStatus').textContent='Check existing failed: '+errorText(e);}
+   result.errors?' Some pages could not be read; backups are recommended.':
+   ' Reimport only existing can rebuild indexes even if 0 viewers are eligible.');
+ }catch(e){$('readerStatus').textContent='Check existing failed: '+errorText(e);}
  finally{readerBusy=false;$('stopCheck').hidden=true;readerControls(false);}
 };
 $('upgradeReaders').onclick=async()=>{
- if(!root||rootUnsafe||rootProbing||!readerPreview||busy||repairBusy||readerBusy)return;
- const target=root;
- try{await allowRoot(target);}catch(e){showError(e);return;}
- readerBusy=true;readerController=new AbortController();readerControls(true);
+ if(busy||repairBusy||readerBusy)return;
+ let target;
+ $('readerStatus').textContent='Requesting write access to archived_emails/…';
  try{
-  await runCatalogSync(target,{signal:readerController.signal,force:true});
-  if(readerController.signal.aborted)return;
+  target=await ensureArchive({write:true});
+ }catch(e){if(e.name!=='AbortError')$('readerStatus').textContent='Existing-only recovery could not start: '+errorText(e);return;}
+ readerBusy=true;readerController=new AbortController();readerControls(true);
+ $('stopReaders').hidden=false;
+ try{
+  $('readerStatus').textContent='Rebuilding missing indexes from saved HTML…';
+  const recovered=await runCatalogSync(target,{signal:readerController.signal,force:true});
+  if(recovered?.interrupted||readerController.signal.aborted)return;
   const result=await runExistingUpgrade(target,readerController.signal,'Reimporting only existing saved HTML emails');
   readerPreview=0;
-  if(result.errors)$('readerStatus').textContent='Some saved pages could not be updated. Check the result below, then run Check existing again.';
+  if(result.errors)$('readerStatus').textContent='Some saved HTML pages could not be updated. Check the result below.';
   else if(result.interrupted)$('readerStatus').textContent='Existing-email update stopped. Run Check existing to see what remains.';
-  else $('readerStatus').textContent='Existing-email update complete. Run Check existing to verify the remaining pages.';
-  if(!result.interrupted&&!result.errors){await readCatalog();await loadRootAccounts(target);}
- }catch(e){readerPreview=0;$('readerStatus').textContent='Reimport only existing failed: '+errorText(e);}
- finally{readerBusy=false;readerControls(false);}
+  else $('readerStatus').textContent='Existing-only recovery complete. Catalog and eligible old viewers are updated.';
+  if(!result.interrupted){await readCatalog();await loadRootAccounts(target);}
+ }catch(e){$('readerStatus').textContent='Reimport only existing failed: '+errorText(e);}
+ finally{readerBusy=false;$('stopReaders').hidden=true;readerControls(false);}
 };
 $('stopCheck').onclick=()=>readerController?.abort();
 $('stopReaders').onclick=()=>{
