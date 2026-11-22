@@ -25,7 +25,7 @@ function restoreReturnPosition(){
  requestAnimationFrame(()=>window.scrollTo(0,y));
 }
 window.addEventListener('pageshow',event=>{if(event.persisted){try{sessionStorage.removeItem(returnKey);}catch{}}});
-// Browse always reads the catalog beside this index.html, never from an import/repair target.
+// All indexed data lives beneath archived_emails/ relative to this index.html.
 function load(src){const p=chain.then(()=>loadScript(localUrl(src)));chain=p.catch(()=>{});return p;}
 function notice(s){$('operationNotice').textContent=s;$('operationNotice').hidden=!s;}
 function browseNotice(s){$('notice').textContent=s;$('notice').hidden=!s;}
@@ -33,7 +33,7 @@ function options(id,items,first){const el=$(id),old=el.value;el.replaceChildren(
 async function loadArchiveSegment(path,selectedRoot){
  // Mounted data roots are read through the selected File System Access handle.
  // The application never loads their catalogs by script tag or from its own folder.
- return selectedRoot?C.unwrap(await C.read(selectedRoot,path)):load(path);
+ return selectedRoot?C.unwrap(await C.read(selectedRoot,path)):load('archived_emails/'+path);
 }
 async function readCatalog(){
  const selectedRoot=root,revision=selectionVersion;
@@ -42,9 +42,9 @@ async function readCatalog(){
   nextCatalog=await C.manifest(selectedRoot);
   if(nextCatalog?.format!==C.VERSION)throw Error('FORMAT');
  }else{
-  // A standalone checked-out demo can still show its fictional fixtures.
-  for(const src of [C.MANIFEST,C.PREVIOUS,'assets/catalog/archive.js',
-   'assets/catalog/archive.previous.js','archive.js','archive.previous.js']){
+  // Classic local script tags load indexes via file:// without File System Access.
+  // A moved or manually merged account folder is recovered by Reimport only existing.
+  for(const src of ['archived_emails/catalog/archive.js','archived_emails/catalog/archive.previous.js']){
    try{const result=await load(src+'?g='+Date.now());if(result?.format!==C.VERSION)throw Error('FORMAT');
     nextCatalog=result;break;}catch(e){last=e;}
   }
@@ -67,9 +67,7 @@ async function readCatalog(){
    if(['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter','pageSize'].includes(id)&&typeof value==='string')$(id).value=value;
   }
  }
- $('activeRootInfo').textContent=selectedRoot
-  ?'Active data folder: /'+selectedRoot.name+'/ · '+all.length.toLocaleString('en-GB')+' indexed messages'
-  :'Local demo archive · '+all.length.toLocaleString('en-GB')+' fictional messages';
+ $('activeRootInfo').textContent='archived_emails/ · '+all.length.toLocaleString('en-GB')+' indexed messages';
  await search();restoreReturnPosition();
 }
 function metadataText(r){return C.fold([r.subject,r.from,r.to,r.cc,r.bcc].join(' '));}
@@ -113,7 +111,7 @@ async function showMessage(record,{loadExternal=false}={}){
 }
 $('closeMessage').onclick=()=>closeMessage();
 $('loadMessageImages').onclick=()=>{if(openMessageRecord&&root===openedRoot){messageImagesApproved=true;void showMessage(openMessageRecord,{loadExternal:true});}};
-function render(){const size=+$('pageSize').value,pages=Math.max(1,Math.ceil(matches.length/size));currentPage=Math.min(currentPage,pages-1);$('rows').replaceChildren();for(const r of matches.slice(currentPage*size,(currentPage+1)*size)){const tr=document.createElement('tr');const tdDate=document.createElement('td');tdDate.className='date';tdDate.textContent=r.date?new Date(r.date).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Unknown date';const tdAddr=document.createElement('td');tdAddr.textContent=r.from||'(Not specified)';const to=document.createElement('span');to.className='address';to.textContent='To: '+(r.to||'—');tdAddr.append(to);const tdSub=document.createElement('td');const a=document.createElement('a');a.className='subject';a.textContent=r.subject||'(No subject)';a.href=root?'#saved-email':localUrl(r.path.split('/').map(encodeURIComponent).join('/'))+'?fromArchive=1&images='+($('autoImages').checked?'auto':'manual')+'&theme='+(document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light');a.target='_self';a.addEventListener('click',e=>{
+function render(){const size=+$('pageSize').value,pages=Math.max(1,Math.ceil(matches.length/size));currentPage=Math.min(currentPage,pages-1);$('rows').replaceChildren();for(const r of matches.slice(currentPage*size,(currentPage+1)*size)){const tr=document.createElement('tr');const tdDate=document.createElement('td');tdDate.className='date';tdDate.textContent=r.date?new Date(r.date).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Unknown date';const tdAddr=document.createElement('td');tdAddr.textContent=r.from||'(Not specified)';const to=document.createElement('span');to.className='address';to.textContent='To: '+(r.to||'—');tdAddr.append(to);const tdSub=document.createElement('td');const a=document.createElement('a');a.className='subject';a.textContent=r.subject||'(No subject)';a.href=root?'#saved-email':'archived_emails/'+r.path.split('/').map(encodeURIComponent).join('/')+'?fromArchive=1&images='+($('autoImages').checked?'auto':'manual')+'&theme='+(document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light');a.target='_self';a.addEventListener('click',e=>{
  if(root){e.preventDefault();void showMessage(r);return;}
  if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey)saveReturnPosition();
 });tdSub.append(a);for(const text of [r.account,...r.labels]){const s=document.createElement('span');s.className='badge';s.textContent=text;tdSub.append(s);}const tdAtt=document.createElement('td');tdAtt.textContent=(r.attachments.length?'⌕ '+r.attachments.length:'—')+(r.original?' · EML':'');tr.append(tdDate,tdAddr,tdSub,tdAtt);$('rows').append(tr);}$('empty').hidden=!!matches.length;$('resultInfo').textContent=matches.length.toLocaleString('en-GB')+' messages'+(matches.length!==all.length?' of '+all.length.toLocaleString('en-GB'):'');$('pageInfo').textContent=(currentPage+1)+' / '+pages;$('prev').disabled=currentPage===0;$('next').disabled=currentPage>=pages-1;}
