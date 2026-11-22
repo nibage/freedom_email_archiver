@@ -191,7 +191,8 @@ async function loadRootAccounts(handle){
  const select=$('importAccountSelect'),prior=select.value,sorted=[...names].sort();
  select.replaceChildren(...sorted.map(a=>new Option(a,a)),new Option('+ New account…','__new__'));
  const wanted=accountTouched?prior:preferredAccount;
- select.value=names.has(wanted)?wanted:sorted.length?sorted[0]:'__new__';
+ // Never choose the fictional 'example' account automatically for someone's real MBOX.
+ select.value=names.has(wanted)?wanted:(sorted.find(a=>a!=='example')||'__new__');
  if(select.value==='__new__'&&!accountTouched)$('importAccount').value=preferredAccount;
  showNewAccount();
  $('accountInfo').textContent=names.size
