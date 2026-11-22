@@ -20,14 +20,23 @@ const empty=()=>({kind:'manifest',format:VERSION,generation:0,accounts:[],segmen
 function checkManifest(m){if(m.kind!=='manifest'||m.format!==VERSION||!Array.isArray(m.segments)||!Array.isArray(m.accounts))throw Error('FORMAT');return m;}
 const VIEWER_DIR='__email_archiver/',MANIFEST=VIEWER_DIR+'assets/catalog/archive.js',PREVIOUS=VIEWER_DIR+'assets/catalog/archive.previous.js';
 const LEGACY_MANIFEST='assets/catalog/archive.js',LEGACY_PREVIOUS='assets/catalog/archive.previous.js';
+const DATA_MANIFEST='catalog/archive.js',DATA_PREVIOUS='catalog/archive.previous.js';
 async function catalogPaths(root){
- if(await exists(root,VIEWER_DIR+'index.html'))return {current:MANIFEST,previous:PREVIOUS,viewerDir:VIEWER_DIR};
- if(await exists(root,'index.html'))return {current:LEGACY_MANIFEST,previous:LEGACY_PREVIOUS,viewerDir:''};
- return {current:MANIFEST,previous:PREVIOUS,viewerDir:VIEWER_DIR};
+ // Data-only folders do not need a copy of this application, index.html or assets/.
+ // Keep pre-existing nested and root-level archive catalog layouts readable in place.
+ if(await exists(root,DATA_MANIFEST)||await exists(root,DATA_PREVIOUS))
+  return {current:DATA_MANIFEST,previous:DATA_PREVIOUS,viewerDir:''};
+ if(await exists(root,MANIFEST)||await exists(root,PREVIOUS)||
+    await exists(root,VIEWER_DIR+'index.html'))
+  return {current:MANIFEST,previous:PREVIOUS,viewerDir:VIEWER_DIR};
+ if(await exists(root,LEGACY_MANIFEST)||await exists(root,LEGACY_PREVIOUS)||
+    await exists(root,'index.html'))
+  return {current:LEGACY_MANIFEST,previous:LEGACY_PREVIOUS,viewerDir:''};
+ return {current:DATA_MANIFEST,previous:DATA_PREVIOUS,viewerDir:''};
 }
 async function manifest(root){
  const paths=await catalogPaths(root);
- for(const [current,backup] of [[paths.current,paths.previous],[MANIFEST,PREVIOUS],[LEGACY_MANIFEST,LEGACY_PREVIOUS],['archive.js','archive.previous.js']]){
+ for(const [current,backup] of [[paths.current,paths.previous],[DATA_MANIFEST,DATA_PREVIOUS],[MANIFEST,PREVIOUS],[LEGACY_MANIFEST,LEGACY_PREVIOUS],['archive.js','archive.previous.js']]){
   if(!await exists(root,current)&&!await exists(root,backup))continue;
   try{return checkManifest(unwrap(await read(root,current)));}
   catch{try{return checkManifest(unwrap(await read(root,backup)));}catch{throw Error('CATALOG');}}
