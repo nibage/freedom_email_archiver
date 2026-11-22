@@ -69,6 +69,7 @@ async function readCatalog(){
  }
  $('activeRootInfo').textContent='archived_emails/ · '+all.length.toLocaleString('en-GB')+' indexed messages';
  await search();restoreReturnPosition();
+ if(root===selectedRoot)await loadRootAccounts(selectedRoot);
 }
 function metadataText(r){return C.fold([r.subject,r.from,r.to,r.cc,r.bcc].join(' '));}
 async function search(){const v=++queryVersion;currentPage=0;const terms=C.fold($('query').value).split(/\s+/).filter(Boolean);const acc=$('accountFilter').value,lab=$('labelFilter').value,from=$('dateFrom').value,to=$('dateTo').value,attach=$('attachmentFilter').value;const candidates=all.filter(r=>(!acc||r.account===acc)&&(!lab||r.labels.includes(lab))&&(!from||r.day&&r.day>=from)&&(!to||r.day&&r.day<=to)&&(!attach||(attach==='yes')===!!r.attachments.length));
@@ -278,59 +279,62 @@ $('files').onchange=()=>{const files=Array.from($('files').files);$('fileInfo').
 function progress(s){$('progress').value=s.totalBytes?Math.min(100,100*s.bytes/s.totalBytes):0;for(const [id,k] of [['readCount','read'],['newCount','new'],['dupeCount','duplicates'],['refreshedCount','refreshed'],['emlSavedCount','emlSaved'],['emlReusedCount','emlReused'],['errorCount','errors']])$(id).textContent=s[k].toLocaleString('en-GB');$('progressDetail').textContent=(s.bytes/1024**2).toFixed(1)+' / '+(s.totalBytes/1024**2).toFixed(1)+' MiB read · '+s.committed+' changes committed to the catalog';}
 $('start').onclick=async()=>{
  if(busy||repairBusy||readerBusy)return;
- let acc;
- try{acc=selectedAccount();}catch(e){showError(e);return;}
- const target=root,sourceFiles=Array.from($('files').files);
- if(!target||rootUnsafe||rootProbing||!rootAccountsResolved||!sourceFiles.length)return;
- // Permissions remain strictly user-gesture based; this button authorizes the pre-import update.
- try{await allowRoot(target);}catch(e){showError(e);return;}
+ const sourceFiles=Array.from($('files').files);
+ if(!sourceFiles.length){notice('Choose at least one MBOX file first.');return;}
+ let target,acc;
+ $('progressPanel').hidden=false;$('status').textContent='Authorizing this archive folder…';
+ $('progressDetail').textContent='Select the folder containing this index.html if Chrome asks.';
+ notice('');
+ try{
+  target=await ensureArchive({write:true});
+  await loadRootAccounts(target);
+  acc=selectedAccount();
+ }catch(e){
+  $('status').textContent='Import not started';
+  $('progressDetail').textContent=errorText(e);
+  if(e.name!=='AbortError')notice(errorText(e));
+  return;
+ }
  preferredAccount=acc;void rememberAccount(acc);
  busy=true;controller=new AbortController();
- $('progressPanel').hidden=true;$('existingProgressPanel').hidden=true;
- $('chooseDir').disabled=true;$('browseChooseRoot').disabled=true;$('previewReaders').disabled=true;$('upgradeReaders').disabled=true;
+ $('existingProgressPanel').hidden=true;
  $('files').disabled=true;$('importAccount').disabled=true;$('importAccountSelect').disabled=true;
+ $('previewReaders').disabled=true;$('upgradeReaders').disabled=true;
  for(const id of ['retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=true;
- $('stop').hidden=false;ready();notice('');
+ $('stop').hidden=false;ready();
  try{
-  if(!(rootIsNew&&rootAccountsResolved&&!rootHasAccounts))await runCatalogSync(target,{signal:controller.signal,force:true});
-  if(controller.signal.aborted)return;
-  const existing=await runExistingUpgrade(target,controller.signal,'Updating existing emails before new MBOX import');
+  $('status').textContent='Checking saved catalog before MBOX import…';
+  $('progressDetail').textContent='Recovering any missing message indexes under archived_emails/.';
+  const recovered=await runCatalogSync(target,{signal:controller.signal,force:true});
+  if(recovered?.interrupted||controller.signal.aborted)return;
+  const existing=await runExistingUpgrade(target,controller.signal,'Updating saved HTML before importing MBOX');
   readerPreview=0;
   if(existing.interrupted||controller.signal.aborted){
-   notice('Import stopped during existing-email updates. Already updated HTML pages remain saved; MBOX import was not started.');
+   notice('Import stopped during saved-email updates. MBOX import was not started.');
    return;
   }
   if(existing.errors){
-   notice(existing.errors+' saved HTML page(s) could not be updated. MBOX import was not started. Check your backup and repeat the operation.');
+   notice(existing.errors+' saved HTML page(s) could not be checked. MBOX import was not started. The source was untouched.');
    return;
   }
-  if(controller.signal.aborted)return;
-  // The application stays in its own folder. Nothing is copied to the data root.
-  $('progressPanel').hidden=false;
-  $('status').textContent='Importing MBOX into '+acc+'…';
-  $('progress').value=0;
-  // This stage always comes after the existing-only HTML pass, even if no older pages exist.
-  $('existingProgressPanel').hidden=false;
-  $('progressPanel').hidden=false;
-  $('status').textContent='Importing MBOX into '+acc+'…';
-  $('progress').value=0;
+  $('progressPanel').hidden=false;$('status').textContent='Importing MBOX into '+acc+'…';
+  $('progress').value=0;$('progressDetail').textContent='Starting incremental MBOX read…';
   const imp=new C.Importer(target,{signal:controller.signal,onProgress:progress,
    emlPolicy:{signed:$('retainSignedEml').checked,encrypted:$('retainSignedEml').checked,
     starred:$('retainStarredEml').checked,important:$('retainImportantEml').checked}});
   const report=await imp.run(sourceFiles,acc);
   $('status').textContent=report.interrupted?'Import stopped':'Import complete';
-  if(report.issues.length)notice('Some messages could not be imported. Source offsets and error codes are in '+acc+'/catalog/import-….json. Source files were not modified.');
-  try{await readCatalog();await loadRootAccounts(target);}catch(e){browseNotice('Import finished, but the selected data catalog could not be loaded: '+errorText(e));}
-  if(report.interrupted&&!report.issues.length)notice('Import stopped safely. Earlier committed messages remain saved in '+target.name+'.');
-  else if(!report.issues.length)notice('Import saved to data folder /'+target.name+'/. Browse now shows this same selected root. No application files were copied.');
+  if(report.issues.length)notice('Some messages were skipped; error details are saved in '+acc+'/catalog/import-….json. Source MBOX files were not modified.');
+  try{await readCatalog();await loadRootAccounts(target);}catch(e){browseNotice('Could not reload archived_emails catalog: '+errorText(e));}
+  if(report.interrupted&&!report.issues.length)notice('Import stopped safely. Previously committed messages remain saved in archived_emails/.');
+  else if(!report.issues.length)notice('Import saved to archived_emails/'+acc+'/. Browse now displays the updated index. No files outside archived_emails/ were rewritten.');
  }catch(e){
-  if(controller.signal.aborted){
-   notice('Import stopped safely. Existing HTML updates and catalog changes already completed remain saved.');
-  }else showError(e);
+  if(controller.signal.aborted)notice('Import stopped safely. Saved changes remain in archived_emails/.');
+  else{notice(errorText(e));$('status').textContent='Import failed';$('progressDetail').textContent=errorText(e);}
   try{await readCatalog();}catch{}
  }finally{
   busy=false;$('stop').hidden=true;$('stopReaders').hidden=true;
-  $('chooseDir').disabled=false;$('browseChooseRoot').disabled=false;$('previewReaders').disabled=!root;$('upgradeReaders').disabled=true;
+  $('previewReaders').disabled=false;$('upgradeReaders').disabled=false;
   $('files').disabled=false;$('importAccount').disabled=false;$('importAccountSelect').disabled=false;
   for(const id of ['retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=false;
   ready();
@@ -341,7 +345,21 @@ $('stop').onclick=()=>{
  if(!$('progressPanel').hidden)$('status').textContent='Stopping after the current message and committing the catalog…';
  else $('existingProgressTitle').textContent='Stopping existing-email updates…';
 };
-function errorText(e){const msgs={ARCHIVE_LOCK_TIMEOUT:'Could not acquire the archive write lock. Close other archive tabs, check syncing, and retry.',APP_SUBFOLDER:'Choose the parent archive root, not its __email_archiver application subfolder.',RECENT_ACCESS:'Archive folder access is not available. Click Import folder root to select it again, then retry.',LOCKED:'Another import or catalog repair may already be writing to this folder. Close other archive tabs and retry.',ACCOUNT:'Enter a valid account folder name, such as personal.',BROWSER:'Import requires a current desktop Chrome or Edge with the File System Access API.',CATALOG:'The catalog could not be loaded. Check the folder is complete and retry importing from your backup.',FORMAT:'Unsupported or damaged catalog format.',NONARCHIVE:'The selected folder contains another index.html. Choose an empty folder or an archive created by this tool.',OLD_ARCHIVE_FORMAT:'This is an older archive layout. For testing, choose a new empty archive root and reimport the original MBOX. No automatic migration is performed.'};return msgs[e.message]||('Operation failed ('+e.name+'). Check permissions, free space and whether another tab is writing to the archive.');}
+function errorText(e){
+ const msgs={
+  APP_PERMISSION:'Chrome needs permission to the application folder before modifying archived_emails/. Run the action again and allow write access.',
+  WRONG_APP_ROOT:'Choose the folder containing the index.html you opened (/'+parentName+'/), not archived_emails/ or a different archive.',
+  RECENT_ACCESS:'Permission to the application folder expired. Run the action and authorize the same app folder again.',
+  ARCHIVE_LOCK_TIMEOUT:'Could not acquire the archive write lock. Close other writing tabs and check syncing.',
+  LOCKED:'Another import or reindex is writing to archived_emails/. Close that tab before retrying.',
+  ACCOUNT:'Enter a valid account folder name, such as personal.',
+  BROWSER:'Import/reindex requires desktop Chrome or Edge with File System Access API.',
+  CATALOG:'Some saved catalog files are damaged. Reimport only existing can rebuild them from HTML.',
+  FORMAT:'Unsupported or damaged catalog format.',
+  REINDEX_INCOMPLETE:'Catalog could not be rebuilt from all saved HTML. Previous indexes were preserved.'
+ };
+ return msgs[e?.message]||('Operation failed ('+(e?.message||e?.name||'unknown')+'). Check folder permissions, free space and archive locks.');
+}
 function showError(e){notice(errorText(e));}
 function showBrowseError(e){browseNotice(errorText(e));}
 
