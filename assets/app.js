@@ -362,7 +362,7 @@ $('start').onclick=async()=>{
   const report=await imp.run(sourceFiles,acc);
   $('status').textContent=report.interrupted?'Import stopped':'Import complete';
   if(report.issues.length)notice('Some messages could not be imported. Source offsets and error codes are in '+acc+'/catalog/import-….json. Source files were not modified.');
-  try{await readCatalog();}catch(e){browseNotice('Import finished, but the selected data catalog could not be loaded: '+errorText(e));}
+  try{await readCatalog();await loadRootAccounts(target);}catch(e){browseNotice('Import finished, but the selected data catalog could not be loaded: '+errorText(e));}
   if(report.interrupted&&!report.issues.length)notice('Import stopped safely. Earlier committed messages remain saved in '+target.name+'.');
   else if(!report.issues.length)notice('Import saved to data folder /'+target.name+'/. Browse now shows this same selected root. No application files were copied.');
  }catch(e){
@@ -548,6 +548,7 @@ $('upgradeReaders').onclick=async()=>{
   if(result.errors)$('readerStatus').textContent='Some saved pages could not be updated. Check the result below, then run Check existing again.';
   else if(result.interrupted)$('readerStatus').textContent='Existing-email update stopped. Run Check existing to see what remains.';
   else $('readerStatus').textContent='Existing-email update complete. Run Check existing to verify the remaining pages.';
+  if(!result.interrupted&&!result.errors){await readCatalog();await loadRootAccounts(target);}
  }catch(e){readerPreview=0;$('readerStatus').textContent='Reimport only existing failed: '+errorText(e);}
  finally{readerBusy=false;readerControls(false);}
 };
