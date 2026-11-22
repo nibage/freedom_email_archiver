@@ -38,7 +38,10 @@ async function open(root,record,{theme='light',autoImages=false}={}){
  }
  doc.getElementById('backToArchive')?.remove();
  doc.getElementById('loadRemoteImages')?.remove();
- const csp="default-src 'none'; img-src data: blob: https: http:; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; media-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+ // Remote images and CSS image URLs are blocked by CSP when the user has
+ // disabled auto-loading; adding src accidentally cannot bypass that choice.
+ const imagePolicy=autoImages?'img-src data: blob: https: http:':'img-src data: blob:';
+ const csp="default-src 'none'; "+imagePolicy+"; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; media-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
  let policy=doc.querySelector('meta[http-equiv="Content-Security-Policy"]');
  if(!policy){policy=doc.createElement('meta');policy.setAttribute('http-equiv','Content-Security-Policy');doc.head.prepend(policy);}
  policy.setAttribute('content',csp);
