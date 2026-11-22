@@ -328,7 +328,7 @@ $('start').onclick=async()=>{
  preferredAccount=acc;void rememberAccount(acc);
  busy=true;controller=new AbortController();
  $('progressPanel').hidden=true;$('existingProgressPanel').hidden=true;
- $('chooseDir').disabled=true;$('previewReaders').disabled=true;$('upgradeReaders').disabled=true;
+ $('chooseDir').disabled=true;$('browseChooseRoot').disabled=true;$('previewReaders').disabled=true;$('upgradeReaders').disabled=true;
  $('files').disabled=true;$('importAccount').disabled=true;$('importAccountSelect').disabled=true;
  for(const id of ['retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=true;
  $('stop').hidden=false;ready();notice('');
@@ -346,28 +346,10 @@ $('start').onclick=async()=>{
    return;
   }
   if(controller.signal.aborted)return;
-  // Keep the existing-email results intact. The MBOX panel reports any viewer
-  // setup work, then resets to display MBOX bytes/progress.
+  // The application stays in its own folder. Nothing is copied to the data root.
   $('progressPanel').hidden=false;
-  $('status').textContent='Preparing archive viewer…';
+  $('status').textContent='Importing MBOX into '+acc+'…';
   $('progress').value=0;
-  $('progressDetail').textContent='Checking local application files…';
-  const viewerInstallation=await install(target,{onProgress:p=>{
-   $('status').textContent='Preparing archive viewer…';
-   $('progress').value=p.total?100*p.checked/p.total:0;
-   $('progressDetail').textContent=p.checked+' / '+p.total+' viewer files checked · '+
-    p.changed+' changed files updated';
-  }});
-  if(viewerInstallation.launcherCreated){
-   rootIsNew=false;
-   $('rootSetupInfo').textContent='Archive installed. Open index.html in /'+target.name+'/ to browse the new copy.';
-   $('rootOpenInfo').hidden=false;
-   $('createArchive').hidden=true;
-  }
-  if(controller.signal.aborted){
-   notice('Import stopped safely before MBOX processing. Existing HTML updates remain saved.');
-   return;
-  }
   // This stage always comes after the existing-only HTML pass, even if no older pages exist.
   $('existingProgressPanel').hidden=false;
   $('progressPanel').hidden=false;
@@ -377,12 +359,11 @@ $('start').onclick=async()=>{
    emlPolicy:{signed:$('retainSignedEml').checked,encrypted:$('retainSignedEml').checked,
     starred:$('retainStarredEml').checked,important:$('retainImportantEml').checked}});
   const report=await imp.run(sourceFiles,acc);
-  const viewerPath=(await C.catalogPaths(target)).viewerDir+'index.html';
   $('status').textContent=report.interrupted?'Import stopped':'Import complete';
   if(report.issues.length)notice('Some messages could not be imported. Source offsets and error codes are in '+acc+'/catalog/import-….json. Source files were not modified.');
-  try{await readCatalog();}catch{/* The destination may be different from this viewer. */}
+  try{await readCatalog();}catch(e){browseNotice('Import finished, but the selected data catalog could not be loaded: '+errorText(e));}
   if(report.interrupted&&!report.issues.length)notice('Import stopped safely. Earlier committed messages remain saved in '+target.name+'.');
-  else if(!report.issues.length)notice('Import saved to '+target.name+'. Open its own '+viewerPath+' to browse those messages. This tab continues to browse its original archive.');
+  else if(!report.issues.length)notice('Import saved to data folder /'+target.name+'/. Browse now shows this same selected root. No application files were copied.');
  }catch(e){
   if(controller.signal.aborted){
    notice('Import stopped safely. Existing HTML updates and catalog changes already completed remain saved.');
@@ -390,7 +371,7 @@ $('start').onclick=async()=>{
   try{await readCatalog();}catch{}
  }finally{
   busy=false;$('stop').hidden=true;$('stopReaders').hidden=true;
-  $('chooseDir').disabled=false;$('previewReaders').disabled=!root;$('upgradeReaders').disabled=true;
+  $('chooseDir').disabled=false;$('browseChooseRoot').disabled=false;$('previewReaders').disabled=!root;$('upgradeReaders').disabled=true;
   $('files').disabled=false;$('importAccount').disabled=false;$('importAccountSelect').disabled=false;
   for(const id of ['retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=false;
   ready();
