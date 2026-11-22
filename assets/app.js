@@ -242,12 +242,16 @@ $('connectArchive').onclick=async()=>{
  $('accessStatus').textContent='Authorizing only this application folder…';
  try{
   let parent=parentHandle||recentParent;
+  if(parent){
+   try{await validateAppParent(parent);}
+   catch{parent=null;} // A portable archive may have moved; allow explicit reauthorization.
+  }
   if(!parent){
    if(!window.showDirectoryPicker)throw Error('BROWSER');
    // The only directory chooser in the program: explicit one-time setup.
    parent=await window.showDirectoryPicker({mode:'readwrite',id:'email-archiver-app'});
+   await validateAppParent(parent);
   }
-  await validateAppParent(parent);
   if(!await permissionGranted(parent,'readwrite')){
    if(typeof parent.requestPermission!=='function'||
       await parent.requestPermission({mode:'readwrite'})!=='granted')
