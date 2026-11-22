@@ -129,7 +129,6 @@ const viewerKey=location.pathname;
 const folderPreference='self-root:'+viewerKey,accountPreference='account:'+viewerKey;
 const viewerParts=decodeURIComponent(viewerKey).split('/').filter(Boolean);
 const selfRootName=viewerParts[nestedViewer?viewerParts.length-3:viewerParts.length-2]||'archive';
-const selfViewerPath=selfRootName+'/'+(nestedViewer?'__email_archiver/':'')+'index.html';
 let recentRoot=null,selectionVersion=0,accountTouched=false,preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null,rootUnsafe=false,rootIsNew=false,rootHasAccounts=false,rootAccountsResolved=false,rootProbing=false;
 function recentDB(){
  return new Promise((resolve,reject)=>{
@@ -182,7 +181,7 @@ async function loadRootAccounts(handle){
   }
  }catch{
   // A remembered self handle without access may still use the viewer's known accounts.
-  if(handle.name===selfRootName)for(const a of catalog?.accounts||[])try{names.add(C.accountName(a));}catch{}
+  for(const a of catalog?.accounts||[])try{names.add(C.accountName(a));}catch{}
  }
  if(handle!==root||version!==selectionVersion)return;
  rootHasAccounts=names.size>0;rootAccountsResolved=true;
@@ -200,7 +199,7 @@ async function updateRootInfo(handle){
  // A browser directory handle exposes only its folder name, never the absolute path.
  // The label stays concise and never suggests that a root was authorized automatically.
  if(!handle){
-  $('dirInfo').textContent='Currently selected: none (open viewer: /'+selfRootName+'/)';
+  $('dirInfo').textContent='Currently selected: none';
   $('accountInfo').textContent='Choose an archive root to load existing accounts.';
   return;
  }
@@ -390,6 +389,7 @@ function showBrowseError(e){browseNotice(errorText(e));}
 let repairBusy=false,repairController=null;
 function operateControls(active){
  $('chooseDir').disabled=active;
+ $('browseChooseRoot').disabled=active;
  $('files').disabled=active;
  $('importAccountSelect').disabled=active;
  $('importAccount').disabled=active;
@@ -433,6 +433,7 @@ $('stopReindex').onclick=()=>repairController?.abort();
 
 function readerControls(active){
  $('chooseDir').disabled=active;
+ $('browseChooseRoot').disabled=active;
  $('files').disabled=active;
  $('previewReaders').disabled=active||!root;
  $('upgradeReaders').disabled=active||!root||!readerPreview;
@@ -554,7 +555,7 @@ $('stopReaders').onclick=()=>{
  else readerController?.abort();
 };
 window.addEventListener('beforeunload',e=>{if(busy||repairBusy||readerBusy){e.preventDefault();e.returnValue='';}});
-window.ArchiveUI={readCatalog,search,install,load,get root(){return root;},get records(){return records;},get catalog(){return catalog;}};
+window.ArchiveUI={readCatalog,search,load,get root(){return root;},get records(){return records;},get catalog(){return catalog;}};
 readCatalog().catch(showBrowseError);
 })();
 
