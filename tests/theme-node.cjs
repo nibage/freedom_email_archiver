@@ -34,7 +34,9 @@ assert(css.includes('--paper:#0e1014')&&css.includes('--surface:#1d2129'),'Dark 
 assert(css.includes('--teal:#f5a623'),'Dark accent should be orange.');
 assert(css.includes('color-scheme:dark'),'Native controls should receive dark mode.');
 assert(!index.includes('YOUR MAIL LIBRARY')&&!index.includes('Keep what matters.'),'Remove redundant landing hero.');
-assert(index.indexOf('id="chooseDir"')<index.indexOf('id="importAccount"'),'Archive root must precede account folder.');
+assert(index.indexOf('id="files"')<index.indexOf('id="importAccount"'),'MBOX selection must precede account choice.');
+assert(!index.includes('id="chooseDir"')&&!index.includes('id="browseChooseRoot"'),'Arbitrary folder selection must be removed.');
+assert(index.includes('archived_emails/'),'Archive data always stays under the app root.');
 assert(index.includes('Email account folder inside the archive'),'Use clearer email account label.');
 assert(!index.includes('<aside')&&index.includes('class="panel import-guide"'),'Move incremental import guidance below the form.');
 assert(!index.includes('No telemetry. No cloud API.'),'Remove redundant footer copy.');

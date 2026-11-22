@@ -25,7 +25,7 @@ function restoreReturnPosition(){
  requestAnimationFrame(()=>window.scrollTo(0,y));
 }
 window.addEventListener('pageshow',event=>{if(event.persisted){try{sessionStorage.removeItem(returnKey);}catch{}}});
-// Browse always reads the catalog beside this index.html, never from an import/repair target.
+// All indexed data lives beneath archived_emails/ relative to this index.html.
 function load(src){const p=chain.then(()=>loadScript(localUrl(src)));chain=p.catch(()=>{});return p;}
 function notice(s){$('operationNotice').textContent=s;$('operationNotice').hidden=!s;}
 function browseNotice(s){$('notice').textContent=s;$('notice').hidden=!s;}
@@ -33,7 +33,7 @@ function options(id,items,first){const el=$(id),old=el.value;el.replaceChildren(
 async function loadArchiveSegment(path,selectedRoot){
  // Mounted data roots are read through the selected File System Access handle.
  // The application never loads their catalogs by script tag or from its own folder.
- return selectedRoot?C.unwrap(await C.read(selectedRoot,path)):load(path);
+ return selectedRoot?C.unwrap(await C.read(selectedRoot,path)):load('archived_emails/'+path);
 }
 async function readCatalog(){
  const selectedRoot=root,revision=selectionVersion;
@@ -42,9 +42,9 @@ async function readCatalog(){
   nextCatalog=await C.manifest(selectedRoot);
   if(nextCatalog?.format!==C.VERSION)throw Error('FORMAT');
  }else{
-  // A standalone checked-out demo can still show its fictional fixtures.
-  for(const src of [C.MANIFEST,C.PREVIOUS,'assets/catalog/archive.js',
-   'assets/catalog/archive.previous.js','archive.js','archive.previous.js']){
+  // Classic local script tags load indexes via file:// without File System Access.
+  // A moved or manually merged account folder is recovered by Reimport only existing.
+  for(const src of ['archived_emails/catalog/archive.js','archived_emails/catalog/archive.previous.js']){
    try{const result=await load(src+'?g='+Date.now());if(result?.format!==C.VERSION)throw Error('FORMAT');
     nextCatalog=result;break;}catch(e){last=e;}
   }
@@ -67,10 +67,9 @@ async function readCatalog(){
    if(['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter','pageSize'].includes(id)&&typeof value==='string')$(id).value=value;
   }
  }
- $('activeRootInfo').textContent=selectedRoot
-  ?'Active data folder: /'+selectedRoot.name+'/ · '+all.length.toLocaleString('en-GB')+' indexed messages'
-  :'Local demo archive · '+all.length.toLocaleString('en-GB')+' fictional messages';
+ $('activeRootInfo').textContent='archived_emails/ · '+all.length.toLocaleString('en-GB')+' indexed messages';
  await search();restoreReturnPosition();
+ if(root===selectedRoot)await loadRootAccounts(selectedRoot);
 }
 function metadataText(r){return C.fold([r.subject,r.from,r.to,r.cc,r.bcc].join(' '));}
 async function search(){const v=++queryVersion;currentPage=0;const terms=C.fold($('query').value).split(/\s+/).filter(Boolean);const acc=$('accountFilter').value,lab=$('labelFilter').value,from=$('dateFrom').value,to=$('dateTo').value,attach=$('attachmentFilter').value;const candidates=all.filter(r=>(!acc||r.account===acc)&&(!lab||r.labels.includes(lab))&&(!from||r.day&&r.day>=from)&&(!to||r.day&&r.day<=to)&&(!attach||(attach==='yes')===!!r.attachments.length));
@@ -113,7 +112,7 @@ async function showMessage(record,{loadExternal=false}={}){
 }
 $('closeMessage').onclick=()=>closeMessage();
 $('loadMessageImages').onclick=()=>{if(openMessageRecord&&root===openedRoot){messageImagesApproved=true;void showMessage(openMessageRecord,{loadExternal:true});}};
-function render(){const size=+$('pageSize').value,pages=Math.max(1,Math.ceil(matches.length/size));currentPage=Math.min(currentPage,pages-1);$('rows').replaceChildren();for(const r of matches.slice(currentPage*size,(currentPage+1)*size)){const tr=document.createElement('tr');const tdDate=document.createElement('td');tdDate.className='date';tdDate.textContent=r.date?new Date(r.date).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Unknown date';const tdAddr=document.createElement('td');tdAddr.textContent=r.from||'(Not specified)';const to=document.createElement('span');to.className='address';to.textContent='To: '+(r.to||'—');tdAddr.append(to);const tdSub=document.createElement('td');const a=document.createElement('a');a.className='subject';a.textContent=r.subject||'(No subject)';a.href=root?'#saved-email':localUrl(r.path.split('/').map(encodeURIComponent).join('/'))+'?fromArchive=1&images='+($('autoImages').checked?'auto':'manual')+'&theme='+(document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light');a.target='_self';a.addEventListener('click',e=>{
+function render(){const size=+$('pageSize').value,pages=Math.max(1,Math.ceil(matches.length/size));currentPage=Math.min(currentPage,pages-1);$('rows').replaceChildren();for(const r of matches.slice(currentPage*size,(currentPage+1)*size)){const tr=document.createElement('tr');const tdDate=document.createElement('td');tdDate.className='date';tdDate.textContent=r.date?new Date(r.date).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Unknown date';const tdAddr=document.createElement('td');tdAddr.textContent=r.from||'(Not specified)';const to=document.createElement('span');to.className='address';to.textContent='To: '+(r.to||'—');tdAddr.append(to);const tdSub=document.createElement('td');const a=document.createElement('a');a.className='subject';a.textContent=r.subject||'(No subject)';a.href=root?'#saved-email':'archived_emails/'+r.path.split('/').map(encodeURIComponent).join('/')+'?fromArchive=1&images='+($('autoImages').checked?'auto':'manual')+'&theme='+(document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light');a.target='_self';a.addEventListener('click',e=>{
  if(root){e.preventDefault();void showMessage(r);return;}
  if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey)saveReturnPosition();
 });tdSub.append(a);for(const text of [r.account,...r.labels]){const s=document.createElement('span');s.className='badge';s.textContent=text;tdSub.append(s);}const tdAtt=document.createElement('td');tdAtt.textContent=(r.attachments.length?'⌕ '+r.attachments.length:'—')+(r.original?' · EML':'');tr.append(tdDate,tdAddr,tdSub,tdAtt);$('rows').append(tr);}$('empty').hidden=!!matches.length;$('resultInfo').textContent=matches.length.toLocaleString('en-GB')+' messages'+(matches.length!==all.length?' of '+all.length.toLocaleString('en-GB'):'');$('pageInfo').textContent=(currentPage+1)+' / '+pages;$('prev').disabled=currentPage===0;$('next').disabled=currentPage>=pages-1;}
@@ -125,13 +124,14 @@ function tab(which){
 }
 $('browseTab').onclick=()=>tab('browse');
 $('importTab').onclick=()=>tab('import');
-function ready(){$('start').disabled=busy||repairBusy||readerBusy||rootUnsafe||rootProbing||!rootAccountsResolved||!root||!$('files').files.length;}
-// Each opened index.html has its own remembered root/account. No global "last" folder.
+function ready(){
+ $('start').disabled=busy||repairBusy||readerBusy||!$('files').files.length;
+}
 const viewerKey=location.pathname;
-const folderPreference='self-root:'+viewerKey,accountPreference='account:'+viewerKey;
-const viewerParts=decodeURIComponent(viewerKey).split('/').filter(Boolean);
-const selfRootName=viewerParts[nestedViewer?viewerParts.length-3:viewerParts.length-2]||'archive';
-let recentRoot=null,selectionVersion=0,accountTouched=false,preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null,rootUnsafe=false,rootIsNew=false,rootHasAccounts=false,rootAccountsResolved=false,rootProbing=false;
+const folderPreference='app-root:'+viewerKey,accountPreference='account:'+viewerKey;
+const parentName=decodeURIComponent(viewerKey).split('/').filter(Boolean).slice(-2,-1)[0]||'email_archiver_root';
+let parentHandle=null,recentParent=null,selectionVersion=0,accountTouched=false;
+let preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null;
 function recentDB(){
  return new Promise((resolve,reject)=>{
   let request;try{request=indexedDB.open('offline-email-archiver-folders',1);}catch(e){reject(e);return;}
@@ -147,21 +147,25 @@ function dbGet(db,key){
   request.onerror=()=>reject(request.error);
  });
 }
-async function rememberAccount(value){
- try{C.accountName(value);}catch{return;}
+async function dbPut(key,value){
  let db;
  try{
   db=await recentDB();
   await new Promise((resolve,reject)=>{
    const transaction=db.transaction('recent','readwrite');
    transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error);
-   transaction.objectStore('recent').put(value,accountPreference);
+   transaction.objectStore('recent').put(value,key);
   });
- }catch{/* Browser profile storage may be disabled for local files. */}
+ }catch{/* File-based browser storage is optional. */}
  finally{db?.close();}
 }
+async function rememberAccount(value){
+ try{C.accountName(value);}catch{return;}
+ await dbPut(accountPreference,value);
+}
 function selectedAccount(){
- return C.accountName(($('importAccountSelect').value==='__new__' ? $('importAccount').value : $('importAccountSelect').value).trim());
+ return C.accountName(($('importAccountSelect').value==='__new__'
+  ?$('importAccount').value:$('importAccountSelect').value).trim());
 }
 function showNewAccount(){
  const isNew=$('importAccountSelect').value==='__new__';
@@ -170,209 +174,167 @@ function showNewAccount(){
  ready();
 }
 $('importAccountSelect').addEventListener('change',()=>{accountTouched=true;showNewAccount();});
-$('importAccount').addEventListener('input',()=>{accountTouched=true;});
-$('importAccount').addEventListener('change',()=>{try{preferredAccount=C.accountName($('importAccount').value.trim());void rememberAccount(preferredAccount);}catch{}});
+$('importAccount').addEventListener('input',()=>{accountTouched=true;ready();});
+$('importAccount').addEventListener('change',()=>{
+ try{preferredAccount=C.accountName($('importAccount').value.trim());void rememberAccount(preferredAccount);}catch{}
+});
 async function loadRootAccounts(handle){
- if(!handle||handle!==root)return;
  const version=selectionVersion,names=new Set();
- try{
+ for(const a of catalog?.accounts||[]){try{names.add(C.accountName(a));}catch{}}
+ if(handle){
   const m=await C.manifest(handle);
   for(const a of m.accounts||[]){try{names.add(C.accountName(a));}catch{}}
-  for await(const [name,entry] of handle.entries()){
+  for await(const [name,entry] of handle.entries())
    if(entry.kind==='directory')try{names.add(C.accountName(name));}catch{}
-  }
- }catch{
-  // A remembered self handle without access may still use the viewer's known accounts.
-  for(const a of catalog?.accounts||[])try{names.add(C.accountName(a));}catch{}
  }
- if(handle!==root||version!==selectionVersion)return;
- rootHasAccounts=names.size>0;rootAccountsResolved=true;
+ if(version!==selectionVersion||handle!==root)return;
  const select=$('importAccountSelect'),prior=select.value,sorted=[...names].sort();
  select.replaceChildren(...sorted.map(a=>new Option(a,a)),new Option('+ New account…','__new__'));
  const wanted=accountTouched?prior:preferredAccount;
  select.value=names.has(wanted)?wanted:sorted.length?sorted[0]:'__new__';
- if(select.value==='__new__')$('importAccount').value=preferredAccount;
+ if(select.value==='__new__'&&!accountTouched)$('importAccount').value=preferredAccount;
  showNewAccount();
- $('accountInfo').textContent=names.size?names.size+' existing account folder(s) found. Select one, or choose New.':'No existing accounts found. Enter a new account folder name.';
+ $('accountInfo').textContent=names.size
+  ?names.size+' account folder(s) in archived_emails/. Select one or choose New.'
+  :'No indexed accounts yet. New emails will be saved under archived_emails/<account>/.';
 }
-
-function rootPathLabel(handle){return handle?.name?handle.name+'/':'(none)';}
-async function updateRootInfo(handle){
- // A browser directory handle exposes only its folder name, never the absolute path.
- // The label stays concise and never suggests that a root was authorized automatically.
- if(!handle){
-  $('dirInfo').textContent='Currently selected: none';
-  $('accountInfo').textContent='Choose an archive root to load existing accounts.';
-  return;
- }
- const name='/'+handle.name+'/';
- $('dirInfo').textContent='Currently selected: '+name;
-
+async function validateAppParent(handle){
+ // A page opened via file:// cannot get an OS handle for its own location.
+ // Validate the requested app folder, refusing arbitrary email/data directories.
+ if(!handle||handle.kind!=='directory'||handle.name!==parentName)throw Error('WRONG_APP_ROOT');
+ const index=await C.read(handle,'index.html');
+ if(!index.includes('assets/app.js')||!index.includes('archived_emails/'))throw Error('WRONG_APP_ROOT');
+ if(!await C.exists(handle,'assets/core.js'))throw Error('WRONG_APP_ROOT');
+ return handle;
 }
-async function quickRootCheck(handle){
- const version=selectionVersion;
- const m=await C.manifest(handle);
- if(handle!==root||version!==selectionVersion)return;
- rootProbing=false;rootUnsafe=false;rootIsNew=!(m.segments?.length||m.total);
- $('catalogStatus').textContent=m.total
-  ?'Data folder loaded · '+m.total+' indexed messages. Use Check existing for a deeper scan.'
-  :'Data folder loaded with no catalog entries. New imports write data and indexes here; no application files are copied.';
- $('previewReaders').disabled=busy||repairBusy||readerBusy;
- $('upgradeReaders').disabled=true;
- ready();
+async function allowRoot(handle,mode='readwrite'){
+ if(!handle)throw Error('APP_PERMISSION');
+ if(typeof handle.queryPermission!=='function')return;
+ if(await handle.queryPermission({mode})==='granted')return;
+ if(typeof handle.requestPermission==='function'&&
+    await handle.requestPermission({mode})==='granted')return;
+ throw Error('APP_PERMISSION');
+}
+async function bindParent(parent,{create=false}={}){
+ await validateAppParent(parent);
+ const data=await parent.getDirectoryHandle('archived_emails',{create});
+ parentHandle=parent;recentParent=parent;
+ root=data;selectionVersion++;
+ $('accessStatus').textContent='Application folder authorized: /'+parent.name+
+  '/. All mail is read/written only within archived_emails/.';
+ await dbPut(folderPreference,parent);
  await readCatalog();
+ await loadRootAccounts(data);
+ return data;
 }
-function setRoot(handle,{recent=false}={}){
- // One application instance always has exactly one active data root.
- closeMessage();
- root=handle;readerPreview=0;rootUnsafe=false;rootIsNew=false;
- rootHasAccounts=false;rootAccountsResolved=false;rootProbing=!!handle;
- all=[];matches=[];records.clear();cache.clear();catalog=null;queryVersion++;
- $('rows').replaceChildren();
- $('activeRootInfo').textContent=handle?'Loading data folder /'+handle.name+'/…':'Local demo archive';
- $('resultInfo').textContent='Loading selected data folder…';
- $('catalogStatus').textContent=handle?'Reading saved catalog from /'+handle.name+'/…':'Choose a data folder to browse your own messages.';
- $('existingProgressPanel').hidden=true;
- $('previewReaders').disabled=!handle||busy||repairBusy||readerBusy;
- $('upgradeReaders').disabled=true;
- $('readerStatus').textContent='Check existing to inspect the selected data folder (read-only).';
- void updateRootInfo(handle,{recent});
- if(handle){
-  void quickRootCheck(handle).catch(e=>{
-   if(handle!==root)return;
-   rootUnsafe=true;rootProbing=false;
-   $('catalogStatus').textContent='Could not open selected data folder: '+errorText(e)+'. No files were changed.';
-   $('activeRootInfo').textContent='Cannot read /'+handle.name+'/ — choose the folder again.';
-   $('resultInfo').textContent='Unable to load data catalog.';
-   ready();
-  });
-  void loadRootAccounts(handle);
- }else{
-  $('accountInfo').textContent='Choose a data folder to load existing accounts.';
-  void readCatalog().catch(showBrowseError);
+async function ensureArchive({write=false}={}){
+ const mode=write?'readwrite':'read';
+ if(root&&parentHandle){
+  await allowRoot(parentHandle,mode);
+  return root;
  }
- ready();
+ if(!window.showDirectoryPicker)throw Error('BROWSER');
+ const opts={mode,id:'email-archiver-app'};
+ if(recentParent)opts.startIn=recentParent;
+ // The user selects the folder CONTAINING the opened index.html, never a data root.
+ const selected=await window.showDirectoryPicker(opts);
+ await validateAppParent(selected);
+ if(write)await allowRoot(selected,'readwrite');
+ try{
+  return await bindParent(selected,{create:write});
+ }catch(e){
+  if(!write&&e.name==='NotFoundError'){
+   parentHandle=selected;recentParent=selected;
+   $('accessStatus').textContent='No archived_emails/ folder yet. Start import creates it next to index.html.';
+   return null;
+  }
+  throw e;
+ }
 }
 async function loadRecent(){
- const before=selectionVersion;
  let db;
  try{
   db=await recentDB();
   const [handle,account]=await Promise.all([dbGet(db,folderPreference),dbGet(db,accountPreference)]);
   if(typeof account==='string'&&!accountTouched){
-   try{preferredAccount=C.accountName(account);$('importAccount').value=preferredAccount;}catch{/* Ignore stale invalid values. */}
+   try{preferredAccount=C.accountName(account);$('importAccount').value=preferredAccount;}catch{}
   }
-  if(handle?.kind==='directory'&&before===selectionVersion){
-   recentRoot=handle;
-   // Silent restore is allowed only when the browser still grants read permission.
-   // Never prompt automatically during page load.
+  if(handle?.kind==='directory'){
+   recentParent=handle;
    let permitted=false;
    try{permitted=typeof handle.queryPermission!=='function'||
-    await handle.queryPermission({mode:'read'})==='granted';}catch{}
-   if(permitted&&!root)setRoot(handle,{recent:true});
-   else if(!permitted&&!root)$('activeRootInfo').textContent='Previous data folder: /'+handle.name+'/ — choose it again to grant access.';
+     await handle.queryPermission({mode:'read'})==='granted';}catch{}
+   if(permitted&&!root){
+    try{await bindParent(handle);}catch{/* No permission prompt and no automatic creation. */}
+   }
   }
- }catch{/* Recent folder and account storage are optional. */}
- finally{db?.close();if(!root)void updateRootInfo(null);}
+ }catch{/* Browser profile storage may be disabled for file:// */}
+ finally{
+  db?.close();
+  if(!root)try{await loadRootAccounts(null);}catch{}
+ }
 }
-async function rememberRecent(handle){
- recentRoot=handle;
- // One remembered folder per copy of the application, regardless of its name.
- let db;
- try{
-  db=await recentDB();
-  await new Promise((resolve,reject)=>{
-   const transaction=db.transaction('recent','readwrite');
-   transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error);
-   transaction.objectStore('recent').put(handle,folderPreference);
-  });
- }catch{/* The folder is still selected for this session. */}
- finally{db?.close();}
-}
-async function allowRoot(handle,mode='readwrite'){
- if(!handle)throw Error('RECENT_ACCESS');
- if(typeof handle.queryPermission!=='function')return;
- if(await handle.queryPermission({mode})==='granted')return;
- if(typeof handle.requestPermission==='function'&&await handle.requestPermission({mode})==='granted')return;
- throw Error('RECENT_ACCESS');
-}
-function pickRoot(){
- if(!window.showDirectoryPicker)throw Error('BROWSER');
- const options={mode:'read',id:'mailarchive'};
- if(recentRoot)options.startIn=recentRoot;
- return showDirectoryPicker(options);
-}
-async function chooseDataFolder(){
- if(busy||repairBusy||readerBusy)return;
- try{
-  const chosen=await pickRoot();
-  if(chosen.name==='__email_archiver'&&await C.exists(chosen,'index.html'))throw Error('APP_SUBFOLDER');
-  selectionVersion++;
-  setRoot(chosen);
-  void rememberRecent(chosen);
- }catch(e){if(e.name!=='AbortError')showError(e);}
-}
-$('chooseDir').onclick=chooseDataFolder;
-$('browseChooseRoot').onclick=chooseDataFolder;
 void loadRecent();
-
 $('files').onchange=()=>{const files=Array.from($('files').files);$('fileInfo').textContent=files.length+' files · '+(files.reduce((s,f)=>s+f.size,0)/1024**3).toFixed(2)+' GiB. Allow at least this space plus a reserve on the destination drive.';ready();};
 function progress(s){$('progress').value=s.totalBytes?Math.min(100,100*s.bytes/s.totalBytes):0;for(const [id,k] of [['readCount','read'],['newCount','new'],['dupeCount','duplicates'],['refreshedCount','refreshed'],['emlSavedCount','emlSaved'],['emlReusedCount','emlReused'],['errorCount','errors']])$(id).textContent=s[k].toLocaleString('en-GB');$('progressDetail').textContent=(s.bytes/1024**2).toFixed(1)+' / '+(s.totalBytes/1024**2).toFixed(1)+' MiB read · '+s.committed+' changes committed to the catalog';}
 $('start').onclick=async()=>{
  if(busy||repairBusy||readerBusy)return;
- let acc;
- try{acc=selectedAccount();}catch(e){showError(e);return;}
- const target=root,sourceFiles=Array.from($('files').files);
- if(!target||rootUnsafe||rootProbing||!rootAccountsResolved||!sourceFiles.length)return;
- // Permissions remain strictly user-gesture based; this button authorizes the pre-import update.
- try{await allowRoot(target);}catch(e){showError(e);return;}
+ const sourceFiles=Array.from($('files').files);
+ if(!sourceFiles.length){notice('Choose at least one MBOX file first.');return;}
+ let target,acc;
+ $('progressPanel').hidden=false;$('status').textContent='Authorizing this archive folder…';
+ $('progressDetail').textContent='Select the folder containing this index.html if Chrome asks.';
+ notice('');
+ try{
+  target=await ensureArchive({write:true});
+  await loadRootAccounts(target);
+  acc=selectedAccount();
+ }catch(e){
+  $('status').textContent='Import not started';
+  $('progressDetail').textContent=errorText(e);
+  if(e.name!=='AbortError')notice(errorText(e));
+  return;
+ }
  preferredAccount=acc;void rememberAccount(acc);
  busy=true;controller=new AbortController();
- $('progressPanel').hidden=true;$('existingProgressPanel').hidden=true;
- $('chooseDir').disabled=true;$('browseChooseRoot').disabled=true;$('previewReaders').disabled=true;$('upgradeReaders').disabled=true;
+ $('existingProgressPanel').hidden=true;
  $('files').disabled=true;$('importAccount').disabled=true;$('importAccountSelect').disabled=true;
+ $('previewReaders').disabled=true;$('upgradeReaders').disabled=true;
  for(const id of ['retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=true;
- $('stop').hidden=false;ready();notice('');
+ $('stop').hidden=false;ready();
  try{
-  if(!(rootIsNew&&rootAccountsResolved&&!rootHasAccounts))await runCatalogSync(target,{signal:controller.signal,force:true});
-  if(controller.signal.aborted)return;
-  const existing=await runExistingUpgrade(target,controller.signal,'Updating existing emails before new MBOX import');
+  $('status').textContent='Checking saved catalog before MBOX import…';
+  $('progressDetail').textContent='Recovering any missing message indexes under archived_emails/.';
+  const recovered=await runCatalogSync(target,{signal:controller.signal,force:true});
+  if(recovered?.interrupted||controller.signal.aborted)return;
+  const existing=await runExistingUpgrade(target,controller.signal,'Updating saved HTML before importing MBOX');
   readerPreview=0;
   if(existing.interrupted||controller.signal.aborted){
-   notice('Import stopped during existing-email updates. Already updated HTML pages remain saved; MBOX import was not started.');
+   notice('Import stopped during saved-email updates. MBOX import was not started.');
    return;
   }
   if(existing.errors){
-   notice(existing.errors+' saved HTML page(s) could not be updated. MBOX import was not started. Check your backup and repeat the operation.');
+   notice(existing.errors+' saved HTML page(s) could not be checked. MBOX import was not started. The source was untouched.');
    return;
   }
-  if(controller.signal.aborted)return;
-  // The application stays in its own folder. Nothing is copied to the data root.
-  $('progressPanel').hidden=false;
-  $('status').textContent='Importing MBOX into '+acc+'…';
-  $('progress').value=0;
-  // This stage always comes after the existing-only HTML pass, even if no older pages exist.
-  $('existingProgressPanel').hidden=false;
-  $('progressPanel').hidden=false;
-  $('status').textContent='Importing MBOX into '+acc+'…';
-  $('progress').value=0;
+  $('progressPanel').hidden=false;$('status').textContent='Importing MBOX into '+acc+'…';
+  $('progress').value=0;$('progressDetail').textContent='Starting incremental MBOX read…';
   const imp=new C.Importer(target,{signal:controller.signal,onProgress:progress,
    emlPolicy:{signed:$('retainSignedEml').checked,encrypted:$('retainSignedEml').checked,
     starred:$('retainStarredEml').checked,important:$('retainImportantEml').checked}});
   const report=await imp.run(sourceFiles,acc);
   $('status').textContent=report.interrupted?'Import stopped':'Import complete';
-  if(report.issues.length)notice('Some messages could not be imported. Source offsets and error codes are in '+acc+'/catalog/import-….json. Source files were not modified.');
-  try{await readCatalog();await loadRootAccounts(target);}catch(e){browseNotice('Import finished, but the selected data catalog could not be loaded: '+errorText(e));}
-  if(report.interrupted&&!report.issues.length)notice('Import stopped safely. Earlier committed messages remain saved in '+target.name+'.');
-  else if(!report.issues.length)notice('Import saved to data folder /'+target.name+'/. Browse now shows this same selected root. No application files were copied.');
+  if(report.issues.length)notice('Some messages were skipped; error details are saved in '+acc+'/catalog/import-….json. Source MBOX files were not modified.');
+  try{await readCatalog();await loadRootAccounts(target);}catch(e){browseNotice('Could not reload archived_emails catalog: '+errorText(e));}
+  if(report.interrupted&&!report.issues.length)notice('Import stopped safely. Previously committed messages remain saved in archived_emails/.');
+  else if(!report.issues.length)notice('Import saved to archived_emails/'+acc+'/. Browse now displays the updated index. No files outside archived_emails/ were rewritten.');
  }catch(e){
-  if(controller.signal.aborted){
-   notice('Import stopped safely. Existing HTML updates and catalog changes already completed remain saved.');
-  }else showError(e);
+  if(controller.signal.aborted)notice('Import stopped safely. Saved changes remain in archived_emails/.');
+  else{notice(errorText(e));$('status').textContent='Import failed';$('progressDetail').textContent=errorText(e);}
   try{await readCatalog();}catch{}
  }finally{
   busy=false;$('stop').hidden=true;$('stopReaders').hidden=true;
-  $('chooseDir').disabled=false;$('browseChooseRoot').disabled=false;$('previewReaders').disabled=!root;$('upgradeReaders').disabled=true;
+  $('previewReaders').disabled=false;$('upgradeReaders').disabled=false;
   $('files').disabled=false;$('importAccount').disabled=false;$('importAccountSelect').disabled=false;
   for(const id of ['retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=false;
   ready();
@@ -383,20 +345,32 @@ $('stop').onclick=()=>{
  if(!$('progressPanel').hidden)$('status').textContent='Stopping after the current message and committing the catalog…';
  else $('existingProgressTitle').textContent='Stopping existing-email updates…';
 };
-function errorText(e){const msgs={ARCHIVE_LOCK_TIMEOUT:'Could not acquire the archive write lock. Close other archive tabs, check syncing, and retry.',APP_SUBFOLDER:'Choose the parent archive root, not its __email_archiver application subfolder.',RECENT_ACCESS:'Archive folder access is not available. Click Import folder root to select it again, then retry.',LOCKED:'Another import or catalog repair may already be writing to this folder. Close other archive tabs and retry.',ACCOUNT:'Enter a valid account folder name, such as personal.',BROWSER:'Import requires a current desktop Chrome or Edge with the File System Access API.',CATALOG:'The catalog could not be loaded. Check the folder is complete and retry importing from your backup.',FORMAT:'Unsupported or damaged catalog format.',NONARCHIVE:'The selected folder contains another index.html. Choose an empty folder or an archive created by this tool.',OLD_ARCHIVE_FORMAT:'This is an older archive layout. For testing, choose a new empty archive root and reimport the original MBOX. No automatic migration is performed.'};return msgs[e.message]||('Operation failed ('+e.name+'). Check permissions, free space and whether another tab is writing to the archive.');}
+function errorText(e){
+ const msgs={
+  APP_PERMISSION:'Chrome needs permission to the application folder before modifying archived_emails/. Run the action again and allow write access.',
+  WRONG_APP_ROOT:'Choose the folder containing the index.html you opened (/'+parentName+'/), not archived_emails/ or a different archive.',
+  RECENT_ACCESS:'Permission to the application folder expired. Run the action and authorize the same app folder again.',
+  ARCHIVE_LOCK_TIMEOUT:'Could not acquire the archive write lock. Close other writing tabs and check syncing.',
+  LOCKED:'Another import or reindex is writing to archived_emails/. Close that tab before retrying.',
+  ACCOUNT:'Enter a valid account folder name, such as personal.',
+  BROWSER:'Import/reindex requires desktop Chrome or Edge with File System Access API.',
+  CATALOG:'Some saved catalog files are damaged. Reimport only existing can rebuild them from HTML.',
+  FORMAT:'Unsupported or damaged catalog format.',
+  REINDEX_INCOMPLETE:'Catalog could not be rebuilt from all saved HTML. Previous indexes were preserved.'
+ };
+ return msgs[e?.message]||('Operation failed ('+(e?.message||e?.name||'unknown')+'). Check folder permissions, free space and archive locks.');
+}
 function showError(e){notice(errorText(e));}
 function showBrowseError(e){browseNotice(errorText(e));}
 
 
 let repairBusy=false,repairController=null;
 function operateControls(active){
- $('chooseDir').disabled=active;
- $('browseChooseRoot').disabled=active;
  $('files').disabled=active;
  $('importAccountSelect').disabled=active;
  $('importAccount').disabled=active;
- $('previewReaders').disabled=active||rootUnsafe||!root;
- $('upgradeReaders').disabled=active||rootUnsafe||!root||!readerPreview;
+ $('previewReaders').disabled=active;
+ $('upgradeReaders').disabled=active;
  ready();
 }
 async function runCatalogSync(target,{signal=null,force=false}={}){
@@ -434,11 +408,9 @@ async function runCatalogSync(target,{signal=null,force=false}={}){
 $('stopReindex').onclick=()=>repairController?.abort();
 
 function readerControls(active){
- $('chooseDir').disabled=active;
- $('browseChooseRoot').disabled=active;
  $('files').disabled=active;
- $('previewReaders').disabled=active||!root;
- $('upgradeReaders').disabled=active||!root||!readerPreview;
+ $('previewReaders').disabled=active;
+ $('upgradeReaders').disabled=active;
  $('importAccountSelect').disabled=active;
  $('importAccount').disabled=active;
  ready();
@@ -500,57 +472,85 @@ async function runExistingUpgrade(target,signal,title){
  }finally{$('stopReaders').hidden=true;}
 }
 $('previewReaders').onclick=async()=>{
- if(!root||rootUnsafe||rootProbing||busy||repairBusy||readerBusy)return;
- const target=root;
- try{await allowRoot(target,'read');}catch(e){showError(e);return;}
- readerBusy=true;readerPreview=0;readerController=new AbortController();
- readerControls(true);$('stopCheck').hidden=false;
+ if(busy||repairBusy||readerBusy)return;
+ let target;
+ $('readerStatus').textContent='Requesting read access to archived_emails/…';
+ try{
+  target=await ensureArchive({write:false});
+  if(!target){
+   $('readerStatus').textContent='No archived_emails/ folder yet. Start import to create it, or copy your account folders there.';
+   $('catalogStatus').textContent='0 saved messages found. No indexes rewritten.';
+   return;
+  }
+ }catch(e){if(e.name!=='AbortError')$('readerStatus').textContent='Check existing could not start: '+errorText(e);return;}
+ readerBusy=true;readerController=new AbortController();readerControls(true);$('stopCheck').hidden=false;
  $('existingProgressPanel').hidden=true;
- $('readerStatus').textContent='Checking saved HTML readers…';
- $('catalogStatus').textContent='Checking existing catalog references (read-only)…';
+ $('readerStatus').textContent='Checking saved HTML in archived_emails/…';
+ $('catalogStatus').textContent='Checking current indexes (read-only)…';
  try{
   const inventory=await ArchiveReindex.checkMissing(target,{
    signal:readerController.signal,
    onProgress:v=>{
-    $('catalogStatus').textContent=v.scanned+' HTML files inspected · '+v.indexed+
-     ' indexed · '+v.missing+' missing entries'+(v.damaged?' · catalog needs repair':'');
+    $('catalogStatus').textContent=v.scanned+' saved HTML files scanned · '+v.indexed+
+     ' indexed · '+v.missing+' missing'+(v.damaged?' · damaged catalog':'');
    }
   });
   if(inventory.interrupted){
-   $('readerStatus').textContent='Check existing stopped. No archive files were changed.';
+   $('readerStatus').textContent='Check existing stopped. No saved files were changed.';
    return;
   }
   $('catalogStatus').textContent=inventory.damaged
-   ?'Some catalog shards are missing or damaged. Start import or Reimport only existing to recover the catalog.'
+   ?'Catalog is missing or damaged. Reimport only existing will rebuild it from saved HTML.'
    :inventory.missing
-    ?inventory.missing+' unindexed saved HTML files found. They will be added before the next import or existing update.'
+    ?inventory.missing+' saved emails are not indexed. Use Reimport only existing to add them.'
     :'Catalog is up to date; '+inventory.indexed+' messages already indexed. No indexes rewritten.';
   const result=await ArchiveReaderUpgrade.refresh(target,{
    signal:readerController.signal,onProgress:x=>{$('readerStatus').textContent=readerStatus(x);}
   });
-  readerPreview=!result.errors&&!result.interrupted?result.eligible:0;
+  readerPreview=result.eligible;
   $('readerStatus').textContent=readerStatus(result)+(result.interrupted?' Check stopped.':
-   result.errors?' Some pages could not be read; check the archive first.':
-   ' Back up the archive before applying the update.');
- }catch(e){readerPreview=0;$('readerStatus').textContent='Check existing failed: '+errorText(e);}
+   result.errors?' Some pages could not be read; backups are recommended.':
+   ' Reimport only existing can rebuild indexes even if 0 viewers are eligible.');
+ }catch(e){$('readerStatus').textContent='Check existing failed: '+errorText(e);}
  finally{readerBusy=false;$('stopCheck').hidden=true;readerControls(false);}
 };
 $('upgradeReaders').onclick=async()=>{
- if(!root||rootUnsafe||rootProbing||!readerPreview||busy||repairBusy||readerBusy)return;
- const target=root;
- try{await allowRoot(target);}catch(e){showError(e);return;}
- readerBusy=true;readerController=new AbortController();readerControls(true);
+ if(busy||repairBusy||readerBusy)return;
+ let target;
+ $('readerStatus').textContent='Requesting write access to archived_emails/…';
  try{
-  await runCatalogSync(target,{signal:readerController.signal,force:true});
-  if(readerController.signal.aborted)return;
+  target=await ensureArchive({write:true});
+ }catch(e){if(e.name!=='AbortError')$('readerStatus').textContent='Existing-only recovery could not start: '+errorText(e);return;}
+ readerBusy=true;readerController=new AbortController();readerControls(true);
+ $('stopReaders').hidden=false;
+ try{
+  $('readerStatus').textContent='Refreshing eligible saved HTML viewers…';
   const result=await runExistingUpgrade(target,readerController.signal,'Reimporting only existing saved HTML emails');
   readerPreview=0;
-  if(result.errors)$('readerStatus').textContent='Some saved pages could not be updated. Check the result below, then run Check existing again.';
-  else if(result.interrupted)$('readerStatus').textContent='Existing-email update stopped. Run Check existing to see what remains.';
-  else $('readerStatus').textContent='Existing-email update complete. Run Check existing to verify the remaining pages.';
-  if(!result.interrupted&&!result.errors){await readCatalog();await loadRootAccounts(target);}
- }catch(e){readerPreview=0;$('readerStatus').textContent='Reimport only existing failed: '+errorText(e);}
- finally{readerBusy=false;readerControls(false);}
+  if(result.interrupted||readerController.signal.aborted){
+   $('readerStatus').textContent='Existing-email refresh stopped; catalog rebuild was not started.';
+   return;
+  }
+  $('catalogStatus').textContent='Rebuilding the full index from archived_emails/ (including manually merged folders)…';
+  const indexed=await ArchiveReindex.rebuild(target,{
+   signal:readerController.signal,
+   onProgress:v=>{
+    $('catalogStatus').textContent='Reindexing archived_emails/: '+(v.scanned||0)+
+     ' HTML checked · '+(v.indexed||0)+' indexed · '+(v.errors||0)+' errors';
+   }
+  });
+  if(indexed.interrupted||readerController.signal.aborted){
+   $('readerStatus').textContent='Reindex stopped; the previous catalog was preserved.';
+   return;
+  }
+  $('catalogStatus').textContent='Rebuilt catalog from '+indexed.indexed+
+   ' saved messages. Removed stale entries; no HTML messages or attachments deleted.';
+  $('readerStatus').textContent=result.errors
+   ?'Catalog rebuilt. Some older HTML viewer shells could not be updated: '+result.errors+' errors.'
+   :'Existing-only recovery complete: '+result.updated+' HTML viewers refreshed and '+indexed.indexed+' messages indexed.';
+  await readCatalog();await loadRootAccounts(target);
+ }catch(e){$('readerStatus').textContent='Reimport only existing failed: '+errorText(e);}
+ finally{readerBusy=false;$('stopReaders').hidden=true;readerControls(false);}
 };
 $('stopCheck').onclick=()=>readerController?.abort();
 $('stopReaders').onclick=()=>{

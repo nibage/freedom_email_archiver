@@ -100,7 +100,7 @@ async function refresh(root,{signal,onProgress=()=>{},write=false,lockTimeoutMs=
    try{
     const file=await source.handle.getFile();
     if(file.size>128*1024*1024){stats.unsupported++;continue;}
-    const result=await evaluate(source,paths.viewerDir,await file.text());
+    const result=await evaluate(source,paths.linkBackDir||paths.viewerDir,await file.text());
     if(result.status==='eligible'){
      stats.eligible++;
      if(write){
