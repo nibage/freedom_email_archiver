@@ -50,9 +50,9 @@ async function main(){
  const seen=[];
  const baselineWrites=writes.length,baselineLocks=lockCount;
  const counts=[];
- const count=await globals.ArchiveReindex.countMessages(root,{onProgress:n=>counts.push(n)});
- assert.equal(count.count,2,'Fast pre-scan counts matching HTML without opening message files');
- assert.equal(count.interrupted,false);
+ const counted=await globals.ArchiveReindex.countMessages(root,{onProgress:n=>counts.push(n)});
+ assert.equal(counted.count,2,'Fast pre-scan counts matching HTML without opening message files');
+ assert.equal(counted.interrupted,false);
  assert.equal(counts.at(-1),2);
  assert.equal(writes.length,baselineWrites,'Counting must be read-only');
  assert.equal(lockCount,baselineLocks,'Counting must not open a write lock');
