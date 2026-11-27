@@ -82,7 +82,8 @@ function fromHtml(html,source){
 }
 async function inspect(source){return fromHtml(await (await source.handle.getFile()).text(),source);}
 async function rebuild(root,{signal,onProgress=()=>{},batchSize=100,lockHeld=false}={}){
- const lock=lockHeld?null:new C.Importer(root);
+ const lock=lockHeld?null:new C.Importer(root,{signal});
+ if(signal?.aborted)return {scanned:0,indexed:0,interrupted:true,committed:false};
  if(lock)await lock.lock();
  const stats={scanned:0,indexed:0,legacyRecovered:0,duplicates:0,errors:0,brokenAttachments:0,missingOriginals:0,segments:0,committed:false};
  const notify=()=>onProgress({...stats});
@@ -142,7 +143,7 @@ async function rebuild(root,{signal,onProgress=()=>{},batchSize=100,lockHeld=fal
    are never rewritten, and a manifest is published only after every new page validates.
    If existing shards are damaged, fall back to the strict full HTML reconstruction. */
 async function syncMissing(root,{signal,onProgress=()=>{},batchSize=100}={}){
- const lock=new C.Importer(root);
+ const lock=new C.Importer(root,{signal});
  await lock.lock();
  const stats={scanned:0,skipped:0,indexed:0,legacyRecovered:0,errors:0,duplicates:0,segments:0,accounts:0,committed:false,interrupted:false,fullRebuild:false};
  const notify=()=>onProgress({...stats});

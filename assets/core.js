@@ -129,7 +129,25 @@ async function prepare(bytes,account,depth=0,viewerDir='',{lazy=false}={}){
 class Importer{
  constructor(root,{onProgress=()=>{},signal=null,batchSize=50,emlPolicy={},refreshExisting=false}={}){this.emlPolicy=emlPolicy;this.refreshExisting=refreshExisting;this.root=root;this.onProgress=onProgress;this.signal=signal;this.batchSize=batchSize;this.records=new Map();this.pending=[];this.search=[];this.searchBytes=0;this.stats={read:0,new:0,duplicates:0,refreshed:0,emlSaved:0,emlReused:0,errors:0,bytes:0,totalBytes:0,committed:0};this.issues=[];}
  async open(){this.paths=await catalogPaths(this.root);this.m=await manifest(this.root);for(const seg of this.m.segments){const data=unwrap(await read(this.root,seg.meta));if(data.kind!=='metadata')throw Error('CATALOG');for(const r of data.records)this.records.set(r.account+'/'+r.id,r);}return this;}
- async lock(){const paths=await catalogPaths(this.root);const f=await fileHandle(this.root,paths.viewerDir+'archive.lock',true);try{this.lockWriter=await f.createWritable({mode:'exclusive'});}catch(e){if(e.name==='AbortError'||e.name==='NoModificationAllowedError')throw Error('LOCKED');throw e;}}
+ async lock({signal=this.signal,timeoutMs=30000}={}){
+  if(signal?.aborted)throw new DOMException('Import cancelled','AbortError');
+  let timer,abort,expired=false;
+  const pending=(async()=>{
+   const paths=await catalogPaths(this.root);
+   const f=await fileHandle(this.root,paths.viewerDir+'archive.lock',true);
+   const writer=await f.createWritable({mode:'exclusive'});
+   if(expired){await writer.close();return;}
+   this.lockWriter=writer;
+  })();
+  const stopped=new Promise((_,reject)=>{
+   timer=setTimeout(()=>{expired=true;reject(Error('ARCHIVE_LOCK_TIMEOUT'));},timeoutMs);
+   if(signal){abort=()=>{expired=true;reject(new DOMException('Import cancelled','AbortError'));};
+    signal.addEventListener('abort',abort,{once:true});if(signal.aborted)abort();}
+  });
+  try{await Promise.race([pending,stopped]);}
+  catch(e){expired=true;if(e.name==='NoModificationAllowedError'||e.name==='AbortError'&&!signal?.aborted)throw Error('LOCKED');throw e;}
+  finally{clearTimeout(timer);if(abort)signal.removeEventListener('abort',abort);}
+ }
  async commit(){if(!this.pending.length)return;const token=crypto.randomUUID();const account=this.pending[0].account;const base=account+'/catalog/'+token;const meta=base+'.js',search=this.search.length?base+'-text.js':null;
   if(search)await write(this.root,search,wrap({kind:'search',records:this.search}));
   await write(this.root,meta,wrap({kind:'metadata',records:this.pending}));

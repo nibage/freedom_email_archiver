@@ -296,40 +296,33 @@ $('start').onclick=async()=>{
  if(busy||repairBusy||readerBusy)return;
  const sourceFiles=Array.from($('files').files);
  if(!sourceFiles.length){notice('Choose at least one MBOX file first.');return;}
- let target,acc;
+ // Reserve the operation before the first await: rapid clicks and catalog
+ // preparation must not start two writers or leave Stop unavailable.
+ let target,acc,importStarted=false;
+ busy=true;controller=new AbortController();
  $('progressPanel').hidden=false;$('status').textContent='Authorizing this archive folder…';
  $('progressDetail').textContent='Preparing archived_emails/. Authorization is managed separately above.';
- notice('');
+ notice('');$('existingProgressPanel').hidden=true;
+ readerControls(true);$('connectArchive').disabled=true;
+ for(const id of ['retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=true;
+ $('stop').hidden=false;ready();
  try{
   target=await ensureArchive({write:true});
   await loadRootAccounts(target);
   acc=selectedAccount();
- }catch(e){
-  $('status').textContent='Import not started';
-  $('progressDetail').textContent=errorText(e);
-  if(e.name!=='AbortError')notice(errorText(e));
-  return;
- }
- preferredAccount=acc;void rememberAccount(acc);
- busy=true;controller=new AbortController();
- $('existingProgressPanel').hidden=true;
- $('files').disabled=true;$('importAccount').disabled=true;$('importAccountSelect').disabled=true;
- $('previewReaders').disabled=true;$('upgradeReaders').disabled=true;
- for(const id of ['retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=true;
- $('stop').hidden=false;ready();
- try{
+  preferredAccount=acc;void rememberAccount(acc);
   $('status').textContent='Checking saved catalog before MBOX import…';
   $('progressDetail').textContent='Recovering any missing message indexes under archived_emails/.';
   const recovered=await runCatalogSync(target,{signal:controller.signal,force:true});
-  if(recovered?.interrupted||controller.signal.aborted)return;
+  if(recovered?.interrupted||controller.signal.aborted){$('status').textContent='Import stopped';notice('Import stopped during catalog recovery. MBOX import was not started.');return;}
   const existing=await runExistingUpgrade(target,controller.signal,'Updating saved HTML before importing MBOX');
   readerPreview=0;
   if(existing.interrupted||controller.signal.aborted){
-   notice('Import stopped during saved-email updates. MBOX import was not started.');
+   $('status').textContent='Import stopped';notice('Import stopped during saved-email updates. MBOX import was not started.');
    return;
   }
   if(existing.errors){
-   notice(existing.errors+' saved HTML page(s) could not be checked. MBOX import was not started. The source was untouched.');
+   $('status').textContent='Import not started';notice(existing.errors+' saved HTML page(s) could not be checked. MBOX import was not started. The source was untouched.');
    return;
   }
   $('progressPanel').hidden=false;$('status').textContent='Importing MBOX into '+acc+'…';
@@ -337,6 +330,7 @@ $('start').onclick=async()=>{
   const imp=new C.Importer(target,{signal:controller.signal,onProgress:progress,
    emlPolicy:{signed:$('retainSignedEml').checked,encrypted:$('retainSignedEml').checked,
     starred:$('retainStarredEml').checked,important:$('retainImportantEml').checked}});
+  importStarted=true;
   const report=await imp.run(sourceFiles,acc);
   $('status').textContent=report.interrupted?'Import stopped':'Import complete';
   if(report.issues.length)notice('Some messages were skipped; error details are saved in '+acc+'/catalog/import-….json. Source MBOX files were not modified.');
@@ -344,11 +338,11 @@ $('start').onclick=async()=>{
   if(report.interrupted&&!report.issues.length)notice('Import stopped safely. Previously committed messages remain saved in archived_emails/.');
   else if(!report.issues.length)notice('Import saved to archived_emails/'+acc+'/. Browse now displays the updated index. No files outside archived_emails/ were rewritten.');
  }catch(e){
-  if(controller.signal.aborted)notice('Import stopped safely. Saved changes remain in archived_emails/.');
-  else{notice(errorText(e));$('status').textContent='Import failed';$('progressDetail').textContent=errorText(e);}
-  try{await readCatalog();}catch{}
+  if(controller.signal.aborted){$('status').textContent='Import stopped';notice('Import stopped safely. Saved changes remain in archived_emails/.');}
+  else{notice(errorText(e));$('status').textContent=importStarted?'Import failed':'Import not started';$('progressDetail').textContent=errorText(e);}
+  if(target)try{await readCatalog();}catch{}
  }finally{
-  busy=false;$('stop').hidden=true;$('stopReaders').hidden=true;
+  busy=false;$('stop').hidden=true;$('stopReaders').hidden=true;$('connectArchive').disabled=false;
   $('previewReaders').disabled=false;$('upgradeReaders').disabled=false;
   $('files').disabled=false;$('importAccount').disabled=false;$('importAccountSelect').disabled=false;
   for(const id of ['retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=false;
@@ -382,6 +376,7 @@ function showBrowseError(e){browseNotice(errorText(e));}
 
 let repairBusy=false,repairController=null;
 function operateControls(active){
+ active=active||busy||repairBusy||readerBusy;
  $('files').disabled=active;
  $('importAccountSelect').disabled=active;
  $('importAccount').disabled=active;
@@ -424,6 +419,7 @@ async function runCatalogSync(target,{signal=null,force=false}={}){
 $('stopReindex').onclick=()=>repairController?.abort();
 
 function readerControls(active){
+ active=active||busy||repairBusy||readerBusy;
  $('files').disabled=active;
  $('previewReaders').disabled=active;
  $('upgradeReaders').disabled=active;

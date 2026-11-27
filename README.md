@@ -106,3 +106,20 @@ The EML is created from the MBOX message **without parsing and re-serializing it
 Dependency-free unit checks for EML byte extraction, real SHA-256 verification, corruption handling and selected MIME categories can be run with `node tests/eml-node.cjs` (Node 20+). For full native File System Access import tests, open `tests/index.html` in desktop Chrome/Edge and choose a disposable empty test folder.
 
 The **Repair catalog** tool preserves valid EML references from self-describing HTML, reports missing original files, and does not rewrite EML content. Keep source MBOX backups if cryptographic evidence matters. Always test on a copied archive before a large private import.
+
+### Browser regression checks
+
+The browser flow test opens the actual local index.html with networking disabled, clicks its controls and uses a disposable on-disk filesystem adapter. It covers old HTML without embedded metadata after authorization, CID images, first/repeated/overlapping imports, full-text search, Check existing, catalog rebuilding, rapid Start clicks and cancellation during preparation. It also executes the 74-check browser import-engine suite. The adapter is test-only: production import still uses the native File System Access API and still requires explicit folder authorization.
+
+For development only, install Playwright and its Chromium binary, then run:
+
+```sh
+npm install --no-save --package-lock=false playwright@1.62.1
+npx playwright install chromium
+node tests/browser-flow.cjs
+node tests/writer-lock-node.cjs
+```
+
+Set CHROME_PATH to use an installed Chrome executable instead of Playwright Chromium. No Node or Playwright installation is required to use the archive. Tests create only fictional data in a temporary directory.
+
+Import, incremental catalog recovery and full rebuilding use bounded, cancellable writer acquisition. If another process or sync drive stalls the lock for 30 seconds, the action reports a lock timeout instead of waiting indefinitely; a lock that resolves after cancellation is closed. Stop during pre-import recovery explicitly reports that MBOX processing did not begin.

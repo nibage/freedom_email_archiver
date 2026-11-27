@@ -23,12 +23,19 @@ async function open(root,record,{theme='light',autoImages=false}={}){
  // DOMParser parses in an inert document. Never insert saved mail into the app DOM.
  const doc=new DOMParser().parseFromString(text,'text/html');
  const embedded=doc.getElementById('mail-archive-record');
- let payload;
- try{payload=JSON.parse(embedded?.textContent||'');}catch{throw Error('MESSAGE_METADATA');}
- const stored=payload?.record;
- if(payload?.schema!==1||!stored||stored.account!==record.account||
-    stored.id!==record.id||stored.path!==record.path||stored.folder!==record.folder)
-  throw Error('MESSAGE_METADATA');
+ let stored;
+ if(embedded){
+  let payload;
+  try{payload=JSON.parse(embedded.textContent||'');}catch{throw Error('MESSAGE_METADATA');}
+  stored=payload?.record;
+  if(payload?.schema!==1||!stored||stored.account!==record.account||
+     stored.id!==record.id||stored.path!==record.path||stored.folder!==record.folder)
+   throw Error('MESSAGE_METADATA');
+ }else{
+  // Earlier standalone archives predate the inert JSON record. Recover only
+  // their readable headers; malformed modern metadata must never fall back.
+  stored=g.ArchiveReindex.fromHtml(text,record).record;
+ }
  if(!doc.querySelector('main'))throw Error('MESSAGE_FORMAT');
  // Strip all scripts and active elements; the isolated iframe also denies
  // scripts, same-origin access, forms and top-level navigation.
