@@ -26,11 +26,12 @@ function elem(tag,id){return {tagName:tag,id,children:[],value:id==='pageSize'?'
  remove(){},removeAttribute(){this.src='';},hasAttribute(){return false;},setAttribute(){},getAttribute(){return null;}};}
 const elements=new Map(),el=id=>{if(!elements.has(id))elements.set(id,elem('element',id));return elements.get(id);};
 const appDirName='freedom_email_archiver',data={name:'archived_emails',kind:'directory',
- async *entries(){yield ['personal',{kind:'directory'}];}};
-let created=0,selected=null,option=null,pickerCalls=0,writeCount=0,foreignAttempt=0;
+ async *entries(){if(handleMissing)throw missing();yield ['personal',{kind:'directory'}];}};
+let created=0,selected=null,option=null,pickerCalls=0,writeCount=0,foreignAttempt=0,handleMissing=false;
+const missing=()=>Object.assign(Error('A requested file or directory could not be found at the time an operation was processed.'),{name:'NotFoundError'});
 const parent={name:appDirName,kind:'directory',
  async queryPermission(){return 'granted';},
- async getDirectoryHandle(name,{create=false}={}){assert.equal(name,'archived_emails');if(create)created++;return data;}};
+ async getDirectoryHandle(name,{create=false}={}){assert.equal(name,'archived_emails');if(handleMissing)throw missing();if(create)created++;return data;}};
 const wrong={name:'another_folder',kind:'directory'};
 let currentChoice=parent;
 const document={getElementById:el,documentElement:{getAttribute(){return 'light';}},
@@ -122,6 +123,26 @@ async function settled(test){for(let i=0;i<30&&!test();i++)await tick();assert(t
  // the static guard and assert the UI has no arbitrary Choose data root control.
  assert(!html.includes('Choose data folder'));
  assert.equal(window.ArchiveUI.root,old,'No control can switch the active data root');
+ // A stale native folder handle must not disable browsing or claim index damage.
+ handleMissing=true;await window.ArchiveUI.readCatalog();
+ assert.equal(window.ArchiveUI.root,null);
+ assert.equal(window.ArchiveUI.records.size,1);
+ assert.equal(el('notice').hidden,true);
+ assert.match(el('accessStatus').textContent,/Archive access not enabled:.*folder was moved/i);
+ assert.equal(el('connectArchive').textContent,'Enable archive access');
+ calls.length=0;
+ await el('upgradeReaders').onclick();
+ assert.deepEqual(calls,[],'No rebuild with an invalid folder handle');
+ assert.match(el('catalogStatus').textContent,/Enable archive access/);
+ handleMissing=false;currentChoice=parent;
+ await el('connectArchive').onclick();
+ assert.equal(pickerCalls,2,'Renewal must select the current folder');
+ assert.equal(el('notice').hidden,true);
+ assert.match(el('accessStatus').textContent,/Archive access ready/);
+ await el('upgradeReaders').onclick();
+ assert.deepEqual(calls,['rebuild']);
+ assert.equal(el('notice').hidden,true,'Successful rebuild must clear stale browse warnings');
+ console.log('PASS stale authorization falls back to relative local indexes and recovery clears warnings');
  console.log('PASS file:// Browse uses archived_emails/ without permissions');
  console.log('PASS Start import and Check existing never open the folder chooser; one explicit grant is reused');
  console.log('PASS authorized import writes only beneath archived_emails/');

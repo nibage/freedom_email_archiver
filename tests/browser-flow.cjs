@@ -260,6 +260,49 @@ async function snapshot(dir,{messagesOnly=false}={}){
   await page.click('#browseTab');await page.fill('#query','lighthouse');await page.waitForFunction(()=>document.getElementById('rows').children.length===3);
   assert.deepEqual(errors,[]);
   console.log('PASS deleted accounts are skipped without permission, pruned with write access, restored without touching other accounts');
+  // Copy the entire app to a different absolute path and folder name. Reading
+  // and body search work without access or rebuilding, even in a fresh context.
+  const relocated=path.join(temp,'relocated archive');
+  await fs.cp(app,relocated,{recursive:true});
+  const movedData=path.join(relocated,'archived_emails'),beforeRelocation=await snapshot(movedData);
+  const relocatedContext=await browser.newContext({offline:true}),relocatedPage=await relocatedContext.newPage();
+  const relocatedErrors=[];relocatedPage.on('pageerror',e=>relocatedErrors.push(e.message));
+  await attachTestFilesystem(relocatedPage,relocated);
+  await relocatedPage.goto(pathToFileURL(path.join(relocated,'index.html')).href);
+  await relocatedPage.waitForFunction(()=>window.ArchiveUI?.records.size===12);
+  await relocatedPage.fill('#query','lighthouse');await relocatedPage.waitForFunction(()=>document.getElementById('rows').children.length===3);
+  assert.equal(await relocatedPage.locator('#notice').isVisible(),false);
+  assert.equal(await relocatedPage.evaluate(()=>ArchiveUI.root),null);
+  assert.deepEqual(await snapshot(movedData),beforeRelocation,'A relocated archive must browse without writing any files');
+  await relocatedPage.click('#importTab');
+  await relocatedPage.click('#connectArchive');
+  await relocatedPage.waitForFunction(()=>document.getElementById('accessStatus').textContent.includes('Archive access ready'));
+  assert.equal(await relocatedPage.locator('#notice').isVisible(),false);
+  assert.deepEqual(await snapshot(movedData),beforeRelocation,'A healthy relocated archive must not rebuild on authorization');
+  // Inject the exact native error on a previously valid directory handle.
+  await relocatedPage.evaluate(async()=>{
+   ArchiveUI.root.entries=async function*(){throw new DOMException('A requested file or directory could not be found at the time an operation was processed.','NotFoundError');};
+   await ArchiveUI.readCatalog();
+  });
+  assert.equal(await relocatedPage.evaluate(()=>ArchiveUI.root),null);
+  assert.equal(await relocatedPage.evaluate(()=>ArchiveUI.records.size),12);
+  assert.equal(await relocatedPage.locator('#notice').isVisible(),false);
+  assert.match(await relocatedPage.locator('#accessStatus').textContent(),/Archive access not enabled:.*folder was moved/);
+  await relocatedPage.click('#connectArchive');
+  await relocatedPage.waitForFunction(()=>document.getElementById('accessStatus').textContent.includes('Archive access ready'));
+  assert.equal(await relocatedPage.locator('#notice').isVisible(),false);
+  assert.deepEqual(await snapshot(movedData),beforeRelocation);
+  // A genuine catalog warning must also clear after an explicit successful rebuild.
+  await relocatedPage.evaluate(async()=>{
+   const saved=ArchiveCore.manifest;
+   ArchiveCore.manifest=async()=>{throw Error('CATALOG');};
+   try{await ArchiveUI.readCatalog();}catch{}finally{ArchiveCore.manifest=saved;}
+  });
+  await relocatedPage.click('#upgradeReaders');await relocatedPage.waitForFunction(()=>!document.getElementById('upgradeReaders').disabled);
+  assert.match(await relocatedPage.locator('#catalogStatus').textContent(),/Rebuilt index: 12 messages/);
+  assert.equal(await relocatedPage.locator('#notice').isVisible(),false);
+  assert.deepEqual(relocatedErrors,[]);await relocatedContext.close();
+  console.log('PASS relocated whole archive, expired folder handle and renewed access without rebuild; successful rebuild clears warnings');
   await page.goto(pathToFileURL(path.join(repo,'tests/index.html')).href);const suite=await page.evaluate(()=>runEnglishTests(archiveTestRoot,{}));
   assert.equal(suite.passed,suite.checks.length);console.log('PASS browser import-engine suite: '+suite.passed+' checks');
  }finally{server?.process()?.kill('SIGKILL');await fs.rm(temp,{recursive:true,force:true});}

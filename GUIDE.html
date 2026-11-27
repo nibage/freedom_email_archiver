@@ -51,7 +51,7 @@
 <p>When you open the archive with saved write access, the app automatically checks account folders. If you remove a whole account, it removes that account from the main catalog without rebuilding other accounts. If you copy in a complete account with a valid index, the app can add it without reading the saved emails. Without write access, unavailable indexes are skipped; the catalog stays unchanged. Accounts with missing or ambiguous indexes need Rebuild index.</p>
 <ul>
 <li>To back up or move your archive, copy the entire application folder, including <code>index.html</code>, <code>assets/</code> and <code>archived_emails/</code>.</li>
-<li>To create a separate archive, copy the whole folder to another location.</li>
+<li>To create a separate archive, copy the whole folder to another location. Moving or renaming the whole application folder does not require Rebuild index: all catalog links are relative. If folder access is lost, click Enable archive access and select the new application folder; Browse and search do not require that permission.</li>
 <li>To merge archives, back them up first. Copy the account folders into <code>archived_emails/</code> and keep their year/month, attachment and EML folders intact. Resolve file conflicts carefully, then click <strong>Rebuild index</strong>.</li>
 <li>To recover saved emails without an index, back them up first, copy their account folders into <code>freedom_email_archiver/archived_emails/</code> and click <strong>Rebuild index</strong>.</li>
 </ul>

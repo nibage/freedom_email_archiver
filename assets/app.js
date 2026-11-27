@@ -54,18 +54,44 @@ async function loadArchiveSegment(path,selectedRoot){
  // The application never loads their catalogs by script tag or from its own folder.
  return selectedRoot?C.unwrap(await C.read(selectedRoot,path)):load('archived_emails/'+path);
 }
+// A failed saved directory handle is an access problem, not an index problem.
+function accessFailure(e){
+ return ['NotFoundError','NotAllowedError','SecurityError','InvalidStateError'].includes(e?.name)||
+  /requested file or directory could not be found/i.test(e?.message||'')||
+  e?.message==='WRONG_APP_ROOT';
+}
+async function probeDirectory(handle){
+ // Verify that the handle still points to an accessible directory. Do not
+ // enumerate any account's messages or inspect its HTML.
+ const entries=handle.entries();
+ try{await entries.next();}finally{await entries.return?.();}
+}
 async function readCatalog({persist=true}={}){
+ const selectedRoot=root,revision=selectionVersion;
+ try{
+  if(selectedRoot)await probeDirectory(selectedRoot);
+  return await readCatalogView({persist});
+ }catch(e){
+  if(root!==selectedRoot||revision!==selectionVersion)return;
+  if(selectedRoot&&accessFailure(e)){
+   await forgetArchiveAccess();
+   return readCatalogView({persist:false});
+  }
+  throw e;
+ }
+}
+async function readCatalogView({persist=true}={}){
  const selectedRoot=root,revision=selectionVersion,loadVersion=++catalogLoadVersion;
  let nextCatalog,last,accountSync=null;
  if(selectedRoot){
   try{
    accountSync=await ArchiveAccountSync.sync(selectedRoot,{write:persist&&await permissionGranted(parentHandle,'readwrite')});
    nextCatalog=accountSync.manifest;
-  }catch{nextCatalog=await C.manifest(selectedRoot);}
+  }catch(e){if(accessFailure(e))throw e;nextCatalog=await C.manifest(selectedRoot);}
   if(nextCatalog?.format!==C.VERSION)throw Error('FORMAT');
  }else{
   // Classic local script tags load indexes via file:// without File System Access.
-  // A moved or manually merged account folder is recovered by Rebuild index.
+  // The whole archive can move intact: every index path is relative.
   for(const src of ['archived_emails/catalog/archive.js','archived_emails/catalog/archive.previous.js']){
    try{const result=await load(src+'?g='+Date.now());if(result?.format!==C.VERSION)throw Error('FORMAT');
     nextCatalog=result;break;}catch(e){last=e;}
@@ -122,7 +148,7 @@ async function readCatalog({persist=true}={}){
  const page=saved?Math.max(0,Math.floor(Number(saved.page)||0)):currentPage;
  const completed=await search({page});
  if(completed&&root===selectedRoot&&revision===selectionVersion)restoreReturnPosition(saved);
- if(root===selectedRoot&&revision===selectionVersion)await loadRootAccounts(selectedRoot);
+ if(root===selectedRoot&&revision===selectionVersion&&loadVersion===catalogLoadVersion)await loadRootAccounts(selectedRoot);
 }
 function metadataText(r){return C.fold([r.subject,r.from,r.to,r.cc,r.bcc].join(' '));}
 async function search({page=0}={}){const v=++queryVersion;const terms=C.fold($('query').value).split(/\s+/).filter(Boolean);const acc=$('accountFilter').value,lab=$('labelFilter').value,from=$('dateFrom').value,to=$('dateTo').value,attach=$('attachmentFilter').value;const candidates=all.filter(r=>(!acc||r.account===acc)&&(!lab||r.labels.includes(lab))&&(!from||r.day&&r.day>=from)&&(!to||r.day&&r.day<=to)&&(!attach||(attach==='yes')===!!r.attachments.length));
@@ -250,18 +276,33 @@ function setAccessStatus(message,kind=''){
  prefix.textContent=kind==='ready'?'Archive access ready:':'Archive access not enabled:';
  status.replaceChildren(prefix,document.createTextNode(' '+message));
 }
+async function forgetArchiveAccess(){
+ // Invalidate outstanding loads before restoring the independent local view.
+ root=null;parentHandle=null;recentParent=null;selectionVersion++;queryVersion++;
+ cache.clear();
+ $('connectArchive').textContent='Enable archive access';
+ setAccessStatus('The folder was moved, is unavailable or access has expired. Select the folder containing this index.html again to enable writes. Browsing uses local relative paths.','error');
+ await dbPut(folderPreference,null);
+}
 async function bindParent(parent,{create=false,syncWrite=true}={}){
  await validateAppParent(parent);
  const data=await parent.getDirectoryHandle('archived_emails',{create});
+ await probeDirectory(data);
  parentHandle=parent;recentParent=parent;root=data;selectionVersion++;
  await dbPut(folderPreference,parent);
  try{await readCatalog({persist:syncWrite});}
- catch(e){browseNotice('The current archive index needs repair: '+errorText(e));}
- await loadRootAccounts(data);
+ catch(e){
+  // Genuine catalog failures remain visible until a successful catalog load.
+  // Never label a stale filesystem authorization as index corruption.
+  if(accessFailure(e))throw e;
+  catalogWarning='The current archive index needs repair: '+errorText(e);
+  browseNotice(catalogWarning);
+ }
+ if(!root||parentHandle!==parent)throw Error('ARCHIVE_ACCESS_REQUIRED');
  const canWrite=await permissionGranted(parent,'readwrite');
  if(canWrite)setAccessStatus('/'+parent.name+'/archived_emails/. Import and Check existing will not ask for a folder.','ready');
  else setAccessStatus('Read access restored for archived_emails/. Click Enable archive access to permit importing and rebuilding.');
- return data;
+ return root;
 }
 async function ensureArchive({write=false}={}){
  // No picker, permission request, or directory selection is permitted here.
@@ -269,25 +310,35 @@ async function ensureArchive({write=false}={}){
  const parent=parentHandle||recentParent;
  if(!parent||!await permissionGranted(parent,write?'readwrite':'read'))
   throw Error('ARCHIVE_ACCESS_REQUIRED');
- if(root&&parent===parentHandle)return root;
- return bindParent(parent,{create:false,syncWrite:false});
+ try{
+  // Resolve the child again, rather than relying on a handle saved before
+  // a folder move, replacement, or sync-drive remount.
+  await validateAppParent(parent);
+  const data=await parent.getDirectoryHandle('archived_emails',{create:false});
+  await probeDirectory(data);
+  if(root&&parent===parentHandle){
+   if(root!==data){root=data;selectionVersion++;}
+   return data;
+  }
+  return await bindParent(parent,{create:false,syncWrite:false});
+ }catch(e){
+  if(!accessFailure(e)&&e?.message!=='ARCHIVE_ACCESS_REQUIRED')throw e;
+  await forgetArchiveAccess();
+  await readCatalog({persist:false}).catch(showBrowseError);
+  throw Error('ARCHIVE_ACCESS_REQUIRED');
+ }
 }
 $('connectArchive').onclick=async()=>{
  if(busy||repairBusy||readerBusy||accessBusy)return;
  accessBusy=true;ready();
  setAccessStatus('Authorizing only this application folder…');
  try{
-  let parent=parentHandle||recentParent;
-  if(parent){
-   try{await validateAppParent(parent);}
-   catch{parent=null;} // A portable archive may have moved; allow explicit reauthorization.
-  }
-  if(!parent){
-   if(!window.showDirectoryPicker)throw Error('BROWSER');
-   // The only directory chooser in the program: explicit one-time setup.
-   parent=await window.showDirectoryPicker({mode:'readwrite',id:'email-archiver-app'});
-   await validateAppParent(parent);
-  }
+  if(!window.showDirectoryPicker)throw Error('BROWSER');
+  // Explicit Enable/Renew always lets the user choose the current folder.
+  // A remembered handle can point to the old location even if permission
+  // still says granted. Never silently reuse it on an explicit renewal.
+  const parent=await window.showDirectoryPicker({mode:'readwrite',id:'email-archiver-app'});
+  await validateAppParent(parent);
   if(!await permissionGranted(parent,'readwrite')){
    if(typeof parent.requestPermission!=='function'||
       await parent.requestPermission({mode:'readwrite'})!=='granted')
@@ -297,7 +348,10 @@ $('connectArchive').onclick=async()=>{
   $('connectArchive').textContent='Renew archive access';
  }catch(e){
   if(e.name==='AbortError')setAccessStatus('Archive authorization cancelled. No files were changed.');
-  else setAccessStatus(errorText(e),'error');
+  else if(accessFailure(e)&&e.message!=='WRONG_APP_ROOT'){
+   await forgetArchiveAccess();
+   await readCatalog({persist:false}).catch(showBrowseError);
+  }else setAccessStatus(errorText(e),'error');
  }finally{accessBusy=false;ready();}
 };
 async function loadRecent(){
@@ -316,7 +370,13 @@ async function loadRecent(){
    if(permitted&&!root&&!accessBusy&&!busy&&!repairBusy&&!readerBusy){
     accessBusy=true;ready();
     try{await bindParent(handle);if(await permissionGranted(handle,'readwrite'))$('connectArchive').textContent='Renew archive access';}
-    catch{/* No permission prompt and no automatic creation. */}
+    catch(e){
+     if(accessFailure(e)){
+      await forgetArchiveAccess();
+      await readCatalog({persist:false}).catch(showBrowseError);
+     }
+     // No permission prompt and no automatic creation.
+    }
     finally{accessBusy=false;ready();}
    }
   }
@@ -383,7 +443,7 @@ function errorText(e){
   APP_PERMISSION:'Write permission was not granted. Click Enable archive access, then select/authorize the folder containing this index.html.',
   ARCHIVE_ACCESS_REQUIRED:'Click Enable archive access once to authorize archived_emails/. Start import and Check existing never open a folder chooser.',
   WRONG_APP_ROOT:'Choose the folder containing the index.html you opened (/'+parentName+'/), not archived_emails/ or a different archive.',
-  RECENT_ACCESS:'Permission to the application folder expired. Run the action and authorize the same app folder again.',
+  RECENT_ACCESS:'Permission to the application folder expired. Click Enable archive access and choose the folder containing this index.html again.',
   ARCHIVE_LOCK_TIMEOUT:'Could not acquire the archive write lock. Close other writing tabs and check syncing.',
   LOCKED:'Another import or reindex is writing to archived_emails/. Close that tab before retrying.',
   ACCOUNT:'Enter a valid account folder name, such as personal.',
@@ -392,10 +452,11 @@ function errorText(e){
   FORMAT:'Unsupported or damaged catalog format.',
   REINDEX_INCOMPLETE:'Catalog could not be rebuilt from all saved HTML. Previous indexes were preserved.'
  };
+ if(accessFailure(e)&&e?.message!=='WRONG_APP_ROOT')return 'Archive folder access is unavailable. If the archive was moved, click Enable archive access and select its current folder. A move alone does not require Rebuild index.';
  return msgs[e?.message]||('Operation failed ('+(e?.message||e?.name||'unknown')+'). Check folder permissions, free space and archive locks.');
 }
 function showError(e){notice(errorText(e));}
-function showBrowseError(e){browseNotice(errorText(e));}
+function showBrowseError(e){catalogWarning=errorText(e);browseNotice(catalogWarning);}
 
 
 let repairBusy=false,repairController=null;
