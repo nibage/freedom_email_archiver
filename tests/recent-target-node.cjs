@@ -23,7 +23,7 @@ function elem(tag,id){return {tagName:tag,id,children:[],value:id==='pageSize'?'
  files:[],disabled:false,hidden:false,checked:id==='autoImages',textContent:'',style:{},listeners:{},src:'',
  classList:{toggle(){}},replaceChildren(...items){this.children=items;if(id==='importAccountSelect')this.value=items[0]?.value||'__new__';},
  addEventListener(name,fn){this.listeners[name]=fn;},append(...items){this.children.push(...items);},add(item){this.children.push(item);},
- remove(){},removeAttribute(){this.src='';},setAttribute(){},getAttribute(){return null;}};}
+ remove(){},removeAttribute(){this.src='';},hasAttribute(){return false;},setAttribute(){},getAttribute(){return null;}};}
 const elements=new Map(),el=id=>{if(!elements.has(id))elements.set(id,elem('element',id));return elements.get(id);};
 const appDirName='email_archiver_root',data={name:'archived_emails',kind:'directory',
  async *entries(){yield ['personal',{kind:'directory'}];}};
