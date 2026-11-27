@@ -71,6 +71,23 @@ async function snapshot(dir,{messagesOnly=false}={}){
   console.log('PASS import reads only MBOX/catalog: no library scan or appearance update');
   await page.click('#browseTab');await page.fill('#query','lighthouse');await page.waitForFunction(()=>document.getElementById('rows').children.length===2);await page.click('#reset');
   await fs.cp(path.join(data,'example'),path.join(data,'merged'),{recursive:true});
+  // Treat the cloned fictional account as an earlier standalone-HTML archive.
+  // Modern embedded metadata correctly binds account='example'; deliberately
+  // remove it in this synthetic merged account to test legacy-header recovery
+  // without forging modern metadata from a different account.
+  async function legacyCopiedPages(dir){
+   for(const e of await fs.readdir(dir,{withFileTypes:true})){
+    const file=path.join(dir,e.name);
+    if(e.isDirectory())await legacyCopiedPages(file);
+    else if(e.name.endsWith('.html')){
+     const page=await fs.readFile(file,'utf8');
+     const earlier=page.replace(/<script id="mail-archive-record" type="application\/json">[\s\S]*?<\/script>/,'');
+     assert.notEqual(earlier,page,'Expected a synthetic older HTML fixture');
+     await fs.writeFile(file,earlier);
+    }
+   }
+  }
+  await legacyCopiedPages(path.join(data,'merged'));
   await page.click('#importTab');await page.locator('#files').setInputFiles([]);
   const beforeCheck=await snapshot(data);await page.click('#previewReaders');await page.waitForFunction(()=>document.getElementById('stopCheck').hidden);
   assert.match(await page.locator('#readerStatus').textContent(),/13 HTML messages checked/);assert.match(await page.locator('#catalogStatus').textContent(),/4 saved messages are unindexed/);
