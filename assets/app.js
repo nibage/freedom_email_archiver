@@ -70,6 +70,7 @@ async function readCatalog({persist=true}={}){
  const selectedRoot=root,revision=selectionVersion;
  try{
   if(selectedRoot)await probeDirectory(selectedRoot);
+  if(root!==selectedRoot||revision!==selectionVersion)return;
   return await readCatalogView({persist});
  }catch(e){
   if(root!==selectedRoot||revision!==selectionVersion)return;
@@ -308,8 +309,14 @@ async function ensureArchive({write=false}={}){
  // No picker, permission request, or directory selection is permitted here.
  // Those actions belong only to the explicit Enable archive access button.
  const parent=parentHandle||recentParent;
- if(!parent||!await permissionGranted(parent,write?'readwrite':'read'))
+ if(!parent)throw Error('ARCHIVE_ACCESS_REQUIRED');
+ if(!await permissionGranted(parent,write?'readwrite':'read')){
+  if(!await permissionGranted(parent,'read')){
+   await forgetArchiveAccess();
+   await readCatalog({persist:false}).catch(showBrowseError);
+  }else setAccessStatus('Read access is available. Click Enable archive access to permit writing.','error');
   throw Error('ARCHIVE_ACCESS_REQUIRED');
+ }
  try{
   // Resolve the child again, rather than relying on a handle saved before
   // a folder move, replacement, or sync-drive remount.

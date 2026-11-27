@@ -293,11 +293,16 @@ async function snapshot(dir,{messagesOnly=false}={}){
   assert.equal(await relocatedPage.locator('#notice').isVisible(),false);
   assert.deepEqual(await snapshot(movedData),beforeRelocation);
   // A genuine catalog warning must also clear after an explicit successful rebuild.
-  await relocatedPage.evaluate(async()=>{
-   const saved=ArchiveCore.manifest;
+  await relocatedPage.evaluate(()=>{
+   window.restoreManifest=()=>{ArchiveCore.manifest=window.savedManifest;};
+   window.savedManifest=ArchiveCore.manifest;
    ArchiveCore.manifest=async()=>{throw Error('CATALOG');};
-   try{await ArchiveUI.readCatalog();}catch{}finally{ArchiveCore.manifest=saved;}
   });
+  await relocatedPage.click('#connectArchive');
+  await relocatedPage.waitForFunction(()=>!document.getElementById('connectArchive').disabled);
+  assert.match(await relocatedPage.locator('#notice').textContent(),/The current archive index needs repair/);
+  assert.equal(await relocatedPage.locator('#notice').evaluate(el=>el.hidden),false);
+  await relocatedPage.evaluate(()=>restoreManifest());
   await relocatedPage.click('#upgradeReaders');await relocatedPage.waitForFunction(()=>!document.getElementById('upgradeReaders').disabled);
   assert.match(await relocatedPage.locator('#catalogStatus').textContent(),/Rebuilt index: 12 messages/);
   assert.equal(await relocatedPage.locator('#notice').isVisible(),false);
