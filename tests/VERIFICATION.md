@@ -1,6 +1,6 @@
 # Current workflow verification
 
-The current release separates four actions: MBOX import, a read-only archive check, index rebuilding and optional message appearance maintenance. The historical development notes below describe older workflows and are superseded by this section.
+The current release separates three actions: MBOX import, read-only Check existing, and index rebuilding. Optional message appearance maintenance and the nested iframe viewer have been removed. Check existing and Rebuild index count saved HTML file handles first and show counted/total progress. Message links open standalone full-page HTML with a Back link and the current light/dark setting. The historical development notes below describe older workflows and are superseded by this section.
 
 Verified using the actual index.html through file:// in installed Chrome on Windows with networking disabled and a disposable on-disk File System Access adapter:
 
