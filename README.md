@@ -38,7 +38,7 @@ There is **no folder selection for another data root**. Copy or move the **whole
 
 Open `index.html` directly in Chrome or Edge. The local catalog and its search shards are loaded from relative JavaScript files under `archived_emails/`; this works under `file://` **without a server, browser-profile database or a folder permission dialog**. Searches use the saved indexes, not all individual messages.
 
-Click a message to read it. Without a granted folder handle, it opens its standalone HTML with its relative attachments and image controls; normal browser Back returns to the list. After the application folder is authorized during a write operation, the integrated sandboxed same-tab viewer is also available. The message shell respects light/dark mode and saved CID images, while sender scripts are blocked. External images automatically load according to the checkbox; turning it off reduces tracking exposure.
+Click a message to open its own **full-page saved HTML** in the same browser tab, without an embedded scrollable iframe or separate application viewer. **Back to archive** returns to the list (or use the browser Back button), preserving search and scroll position when available. Current rendered message pages receive the application's light/dark setting and external-image preference through the link. Embedded CID images and attachments use ordinary relative files; the saved HTML retains strict CSP protection. External images may contact their host if enabled; uncheck the option to reduce tracking.
 
 ## Importing an MBOX
 
@@ -61,13 +61,14 @@ The operations are independent:
 | **Start import** | Selected MBOX files and saved catalog | New messages/attachments, necessary duplicate label/EML metadata and incremental indexes |
 | **Check existing** | Saved HTML, catalog and attachment/EML references in archived_emails/ | Nothing; no writer lock |
 | **Rebuild index** (formerly Reimport only existing) | Saved HTML physically present under all accounts | Catalog and text-search indexes only |
-| **Update message appearance** under Optional appearance maintenance | Saved HTML reader shells | Recognized old message shells only; original body bytes and attachment files are preserved |
+
+**Check existing** and **Rebuild index** show a visible progress bar. First the application counts matching HTML files by directory entries (indeterminate bar); then it shows the processed/total count, with one additional final step for publishing a rebuilt index. This lightweight counting pass does not open message contents or acquire a write lock. These actions can be stopped; aborted or invalid index rebuilds do not replace the previous published catalog.
 
 After copying, removing or merging account folders, use **Rebuild index** with no MBOX selected. It adds copied messages and drops stale catalog references without modifying or deleting saved HTML, attachments or EML files. The old catalog stays published until the replacement validates; an incomplete or invalid rebuild is not published. This operation works even when no old message appearance needs updating.
 
-**Check existing** makes one read-only pass through saved HTML and validates catalog/search shards and local attachment/original references. It reports unindexed messages, stale catalog references, malformed/unreadable HTML and missing files. It does not silently repair anything or inspect the appearance version. Folder authorization is still required to enumerate local directories; the action never opens a new picker.
+**Check existing** first counts saved HTML file handles without opening their content, then makes one read-only verification pass through saved HTML and validates catalog/search shards and local attachment/original references. It reports unindexed messages, stale catalog references, malformed/unreadable HTML and missing files. It does not silently repair anything or inspect the appearance version. Folder authorization is still required to enumerate local directories; the action never opens a new picker.
 
-A healthy normal MBOX import does not inspect unrelated HTML or run either maintenance operation. Its existing catalog preserves earlier indexed mail omitted from a new export. Manual filesystem changes become visible after an explicit index rebuild. Duplicate messages with older appearance are skipped too; choose optional appearance maintenance if desired. A changed label or optional EML retention may still update that particular duplicate's metadata.
+A healthy normal MBOX import does not inspect unrelated HTML or run either index operation. Its existing catalog preserves earlier indexed mail omitted from a new export. Manual filesystem changes become visible after an explicit index rebuild. A changed label or optional EML retention may still update that particular duplicate's metadata.
 
 ### Recovering from a deleted `__email_archiver` folder
 
@@ -115,7 +116,7 @@ The **Rebuild index** tool preserves valid EML references from self-describing H
 
 ### Browser regression checks
 
-The browser flow test opens the actual local index.html with networking disabled, clicks its controls and uses a disposable on-disk filesystem adapter. It covers old HTML without embedded metadata after authorization, CID images, first/repeated/overlapping imports, full-text search, Check existing, catalog rebuilding, rapid Start clicks, cancellation, manual folder merges, read-only file integrity and independent appearance maintenance. It also executes the 75-check browser import-engine suite. The adapter is test-only: production import still uses the native File System Access API and still requires explicit folder authorization.
+The browser flow test opens the actual local index.html with networking disabled, clicks its controls and uses a disposable on-disk filesystem adapter. It covers old HTML without embedded metadata after authorization, CID images, first/repeated/overlapping imports, full-text search, Check existing, catalog rebuilding, rapid Start clicks, cancellation, manual folder merges, read-only file integrity, index progress and standalone full-page light/dark message viewing. It also executes the 75-check browser import-engine suite. The adapter is test-only: production import still uses the native File System Access API and still requires explicit folder authorization.
 
 For development only, install Playwright and its Chromium binary, then run:
 
