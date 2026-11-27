@@ -12,7 +12,9 @@ async function runEnglishTests(parent,{onCheck=()=>{}}={}){
  check('Newly imported records carry a renderer marker',oldShardData.records[0].renderVersion===MailRenderer.RENDER_VERSION);
  delete oldShardData.records[0].renderVersion;await C.write(root,oldShard,C.wrap(oldShardData));
  r=await new C.Importer(root).run([first()],'example');
- check('Old unversioned HTML refreshes automatically just once',r.stats.refreshed===1&&r.stats.new===0);
+ check('Import does not implicitly refresh old unversioned HTML',r.stats.refreshed===0&&r.stats.new===0);
+ r=await new C.Importer(root,{refreshExisting:true}).run([first()],'example');
+ check('Explicit appearance refresh remains available',r.stats.refreshed===4&&r.stats.new===0);
  sanitized=0;DOMPurify.sanitize=function(...args){sanitized++;return sanitize.apply(this,args);};
  r=await new C.Importer(root).run([first()],'example');DOMPurify.sanitize=sanitize;
  check('Updated renderer is not invoked on a following reimport',sanitized===0);

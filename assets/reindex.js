@@ -80,7 +80,7 @@ function fromHtml(html,source){
  const text=fragment.querySelector('main')?.textContent||'';
  return {record:{...r,attachments},text:C.fold(text),legacy};
 }
-async function inspect(source){return fromHtml(await (await source.handle.getFile()).text(),source);}
+async function inspect(source){const file=await source.handle.getFile();if(file.size>128*1024*1024)throw Error('HTML_TOO_LARGE');return fromHtml(await file.text(),source);}
 async function rebuild(root,{signal,onProgress=()=>{},batchSize=100,lockHeld=false}={}){
  const lock=lockHeld?null:new C.Importer(root,{signal});
  if(signal?.aborted)return {scanned:0,indexed:0,interrupted:true,committed:false};
@@ -225,16 +225,15 @@ async function syncMissing(root,{signal,onProgress=()=>{},batchSize=100}={}){
 /* Read-only deep inventory for Check existing. Unlike syncMissing, this never
    opens a writer or changes catalog files. */
 async function checkMissing(root,{signal,onProgress=()=>{}}={}){
- const stats={scanned:0,indexed:0,missing:0,damaged:false,errors:0,interrupted:false};
- const notify=()=>onProgress({...stats});
- const known=new Map();
+ const stats={scanned:0,indexed:0,missing:0,stale:0,validated:0,duplicates:0,damaged:false,errors:0,brokenAttachments:0,missingOriginals:0,interrupted:false};
+ const notify=()=>onProgress({...stats}),known=new Map(),present=new Set(),seenKeys=new Set();
  try{
   const m=await C.manifest(root);
   for(const seg of m.segments){
    if(signal?.aborted){stats.interrupted=true;notify();return stats;}
    const data=C.unwrap(await C.read(root,seg.meta));
    if(data.kind!=='metadata'||!Array.isArray(data.records))throw Error('CATALOG');
-   if(seg.search&&!await C.exists(root,seg.search))throw Error('MISSING_SEARCH_INDEX');
+   if(seg.search){const search=C.unwrap(await C.read(root,seg.search));if(search.kind!=='search'||!Array.isArray(search.records))throw Error('CATALOG');}
    for(const r of data.records){
     const key=r.account+'/'+r.id;
     if(!r.path||(known.has(key)&&known.get(key)!==r.path))throw Error('CATALOG');
@@ -247,12 +246,18 @@ async function checkMissing(root,{signal,onProgress=()=>{}}={}){
   if(signal?.aborted){stats.interrupted=true;break;}
   stats.scanned++;
   const key=source.account+'/'+source.id;
-  if(known.get(key)===source.path)stats.indexed++;
-  else stats.missing++;
-  if(stats.scanned<=5||stats.scanned%25===0){
-   notify();await new Promise(r=>setTimeout(r,0));
-  }
+  if(seenKeys.has(key))stats.duplicates++;
+  seenKeys.add(key);present.add(source.path);
+  if(known.get(key)===source.path)stats.indexed++;else stats.missing++;
+  try{
+   const {record}=await inspect(source);stats.validated++;
+   for(const a of record.attachments)if(!await C.exists(root,source.folder+'/'+decodeURIComponent(a.href)))stats.brokenAttachments++;
+   if(record.original&&!await C.exists(root,source.folder+'/'+record.original.href))stats.missingOriginals++;
+  }catch{stats.errors++;}
+  if(stats.scanned<=5||stats.scanned%25===0){notify();await new Promise(r=>setTimeout(r,0));}
  }
+ // Do not present the unscanned remainder as missing after cancellation.
+ if(!stats.interrupted)for(const savedPath of known.values())if(!present.has(savedPath))stats.stale++;
  notify();return stats;
 }
 g.ArchiveReindex={scan,fromHtml,inspect,rebuild,syncMissing,checkMissing,safeAttachmentHref};

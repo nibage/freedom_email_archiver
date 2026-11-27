@@ -53,6 +53,7 @@ async function main(){
  assert.equal(check.scanned,2);assert.equal(check.indexed,1);assert.equal(check.missing,1);
  assert.equal(writes.length,baselineWrites,'Check existing must be read-only');
  assert.equal(lockCount,baselineLocks,'Check existing must not request a writer lock');
+ assert.equal(check.validated,2);assert.equal(reads.get(ida),1);assert.equal(reads.get(idb),1);reads.clear();
  let result=await globals.ArchiveReindex.syncMissing(root,{onProgress:s=>seen.push(s)});
  assert.equal(result.scanned,2);assert.equal(result.skipped,1);assert.equal(result.indexed,1);assert.equal(result.committed,true);
  assert.equal(reads.get(ida)||0,0,'Already indexed HTML must not be read');
@@ -67,7 +68,7 @@ async function main(){
  const confirmed=await globals.ArchiveReindex.checkMissing(root,{});
  assert.equal(confirmed.missing,0);assert.equal(confirmed.indexed,2);
  assert.equal(writes.length,writesAfter,'Repeated Check existing must never rewrite a catalog');
- assert.equal(reads.get(ida)||0,0,'Up-to-date files are not parsed');
+ assert.equal(reads.get(ida),1,'Explicit Check existing reads each indexed HTML exactly once');
  assert.equal(lockCount,lockClose,'Every writer lock must be released');
  // A missing catalog is recovered from all saved HTML without any MBOX.
  manifest=C.empty();

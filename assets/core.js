@@ -172,10 +172,10 @@ class Importer{
    if(old){
     this.stats.duplicates++;
     const merged=[...new Set([...old.labels,...p.meta.labels])].sort();
-    // Imported HTML predating this marker is refreshed once; current pages are not rewritten.
-    const needsAppearanceRefresh=this.refreshExisting||old.renderVersion!==RENDER_VERSION;
+    // Appearance changes are explicit maintenance, never a prerequisite for MBOX import.
+    const needsAppearanceRefresh=this.refreshExisting;
     if(json(merged)!==json(old.labels)||originalChanged||needsAppearanceRefresh){
-     const updated={...old,labels:merged,mime:p.meta.mime||old.mime,renderVersion:RENDER_VERSION,...(original?{original}:{})};
+     const updated={...old,labels:merged,mime:p.meta.mime||old.mime,...(needsAppearanceRefresh?{renderVersion:RENDER_VERSION}:{}),...(original?{original}:{})};
      // Keep the existing body on metadata-only updates; only a version change rerenders HTML.
      let body;
      if(!needsAppearanceRefresh){

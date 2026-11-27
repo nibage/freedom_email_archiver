@@ -2,7 +2,7 @@
 const C=ArchiveCore,$=id=>document.getElementById(id);let pending=null;
 window.MailArchive={receive:data=>{if(pending)pending(data);}};
 function loadScript(src){return new Promise((resolve,reject)=>{const s=document.createElement('script');let result;pending=x=>result=x;s.src=src;s.onload=()=>{pending=null;s.remove();result?resolve(result):reject(Error('CATALOG'));};s.onerror=()=>{pending=null;s.remove();reject(Error('CATALOG'));};document.head.append(s);});}
-let catalog,records=new Map(),all=[],matches=[],currentPage=0,queryVersion=0,root=null,controller=null,busy=false,cache=new Map(),chain=Promise.resolve();
+let catalog,records=new Map(),all=[],matches=[],currentPage=0,queryVersion=0,root=null,controller=null,busy=false,accessBusy=false,cache=new Map(),chain=Promise.resolve();
 const nestedViewer=/(?:^|\/)__email_archiver\/index\.html$/i.test(decodeURIComponent(location.pathname));
 const localUrl=p=>(nestedViewer?'../':'')+p;
 const returnKey='email-archive-return:'+location.pathname,imagesKey='email-archive-images:'+location.pathname;
@@ -43,7 +43,7 @@ async function readCatalog(){
   if(nextCatalog?.format!==C.VERSION)throw Error('FORMAT');
  }else{
   // Classic local script tags load indexes via file:// without File System Access.
-  // A moved or manually merged account folder is recovered by Reimport only existing.
+  // A moved or manually merged account folder is recovered by Rebuild index.
   for(const src of ['archived_emails/catalog/archive.js','archived_emails/catalog/archive.previous.js']){
    try{const result=await load(src+'?g='+Date.now());if(result?.format!==C.VERSION)throw Error('FORMAT');
     nextCatalog=result;break;}catch(e){last=e;}
@@ -125,13 +125,15 @@ function tab(which){
 $('browseTab').onclick=()=>tab('browse');
 $('importTab').onclick=()=>tab('import');
 function ready(){
- $('start').disabled=busy||repairBusy||readerBusy||!$('files').files.length;
+ const active=busy||repairBusy||readerBusy||accessBusy;
+ $('start').disabled=active||!$('files').files.length;
+ for(const id of ['files','importAccountSelect','importAccount','connectArchive','previewReaders','upgradeReaders','refreshViewers','retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=active;
 }
 const viewerKey=location.pathname;
 const folderPreference='app-root:'+viewerKey,accountPreference='account:'+viewerKey;
 const parentName=decodeURIComponent(viewerKey).split('/').filter(Boolean).slice(-2,-1)[0]||'email_archiver_root';
 let parentHandle=null,recentParent=null,selectionVersion=0,accountTouched=false;
-let preferredAccount='personal',readerBusy=false,readerPreview=0,readerController=null;
+let preferredAccount='personal',readerBusy=false,readerController=null;
 function recentDB(){
  return new Promise((resolve,reject)=>{
   let request;try{request=indexedDB.open('offline-email-archiver-folders',1);}catch(e){reject(e);return;}
@@ -237,8 +239,8 @@ async function ensureArchive({write=false}={}){
  return bindParent(parent,{create:false});
 }
 $('connectArchive').onclick=async()=>{
- if(busy||repairBusy||readerBusy)return;
- $('connectArchive').disabled=true;
+ if(busy||repairBusy||readerBusy||accessBusy)return;
+ accessBusy=true;ready();
  $('accessStatus').textContent='Authorizing only this application folder…';
  try{
   let parent=parentHandle||recentParent;
@@ -263,7 +265,7 @@ $('connectArchive').onclick=async()=>{
   $('accessStatus').textContent=e.name==='AbortError'
    ?'Archive authorization cancelled. No files were changed.'
    :'Archive access not enabled: '+errorText(e);
- }finally{$('connectArchive').disabled=false;}
+ }finally{accessBusy=false;ready();}
 };
 async function loadRecent(){
  let db;
@@ -291,9 +293,9 @@ async function loadRecent(){
 }
 void loadRecent();
 $('files').onchange=()=>{const files=Array.from($('files').files);$('fileInfo').textContent=files.length+' files · '+(files.reduce((s,f)=>s+f.size,0)/1024**3).toFixed(2)+' GiB. Allow at least this space plus a reserve on the destination drive.';ready();};
-function progress(s){$('progress').value=s.totalBytes?Math.min(100,100*s.bytes/s.totalBytes):0;for(const [id,k] of [['readCount','read'],['newCount','new'],['dupeCount','duplicates'],['refreshedCount','refreshed'],['emlSavedCount','emlSaved'],['emlReusedCount','emlReused'],['errorCount','errors']])$(id).textContent=s[k].toLocaleString('en-GB');$('progressDetail').textContent=(s.bytes/1024**2).toFixed(1)+' / '+(s.totalBytes/1024**2).toFixed(1)+' MiB read · '+s.committed+' changes committed to the catalog';}
+function progress(s){$('progress').value=s.totalBytes?Math.min(100,100*s.bytes/s.totalBytes):0;for(const [id,k] of [['readCount','read'],['newCount','new'],['dupeCount','duplicates'],['emlSavedCount','emlSaved'],['emlReusedCount','emlReused'],['errorCount','errors']])$(id).textContent=s[k].toLocaleString('en-GB');$('progressDetail').textContent=(s.bytes/1024**2).toFixed(1)+' / '+(s.totalBytes/1024**2).toFixed(1)+' MiB read · '+s.committed+' changes committed to the catalog';}
 $('start').onclick=async()=>{
- if(busy||repairBusy||readerBusy)return;
+ if(busy||repairBusy||readerBusy||accessBusy)return;
  const sourceFiles=Array.from($('files').files);
  if(!sourceFiles.length){notice('Choose at least one MBOX file first.');return;}
  // Reserve the operation before the first await: rapid clicks and catalog
@@ -308,23 +310,9 @@ $('start').onclick=async()=>{
  $('stop').hidden=false;ready();
  try{
   target=await ensureArchive({write:true});
-  await loadRootAccounts(target);
   acc=selectedAccount();
   preferredAccount=acc;void rememberAccount(acc);
-  $('status').textContent='Checking saved catalog before MBOX import…';
-  $('progressDetail').textContent='Recovering any missing message indexes under archived_emails/.';
-  const recovered=await runCatalogSync(target,{signal:controller.signal,force:true});
-  if(recovered?.interrupted||controller.signal.aborted){$('status').textContent='Import stopped';notice('Import stopped during catalog recovery. MBOX import was not started.');return;}
-  const existing=await runExistingUpgrade(target,controller.signal,'Updating saved HTML before importing MBOX');
-  readerPreview=0;
-  if(existing.interrupted||controller.signal.aborted){
-   $('status').textContent='Import stopped';notice('Import stopped during saved-email updates. MBOX import was not started.');
-   return;
-  }
-  if(existing.errors){
-   $('status').textContent='Import not started';notice(existing.errors+' saved HTML page(s) could not be checked. MBOX import was not started. The source was untouched.');
-   return;
-  }
+  if(controller.signal.aborted){$('status').textContent='Import stopped';return;}
   $('progressPanel').hidden=false;$('status').textContent='Importing MBOX into '+acc+'…';
   $('progress').value=0;$('progressDetail').textContent='Starting incremental MBOX read…';
   const imp=new C.Importer(target,{signal:controller.signal,onProgress:progress,
@@ -364,7 +352,7 @@ function errorText(e){
   LOCKED:'Another import or reindex is writing to archived_emails/. Close that tab before retrying.',
   ACCOUNT:'Enter a valid account folder name, such as personal.',
   BROWSER:'Import/reindex requires desktop Chrome or Edge with File System Access API.',
-  CATALOG:'Some saved catalog files are damaged. Reimport only existing can rebuild them from HTML.',
+  CATALOG:'Some saved catalog files are damaged. Rebuild index can recover them from saved HTML.',
   FORMAT:'Unsupported or damaged catalog format.',
   REINDEX_INCOMPLETE:'Catalog could not be rebuilt from all saved HTML. Previous indexes were preserved.'
  };
@@ -375,61 +363,7 @@ function showBrowseError(e){browseNotice(errorText(e));}
 
 
 let repairBusy=false,repairController=null;
-function operateControls(active){
- active=active||busy||repairBusy||readerBusy;
- $('files').disabled=active;
- $('importAccountSelect').disabled=active;
- $('importAccount').disabled=active;
- $('previewReaders').disabled=active;
- $('upgradeReaders').disabled=active;
- ready();
-}
-async function runCatalogSync(target,{signal=null,force=false}={}){
- if(!target||repairBusy||(!force&&(busy||readerBusy)))return null;
- repairBusy=true;repairController=new AbortController();operateControls(true);
- $('stopReindex').hidden=!!signal;
- $('catalogStatus').textContent='Recovering missing catalog entries from saved account folders…';
- try{
-  const stats=await ArchiveReindex.syncMissing(target,{
-   signal:signal||repairController.signal,
-   onProgress:v=>{
-    $('catalogStatus').textContent=(v.scanned||0)+' HTML files found · '+(v.skipped||0)+
-     ' already indexed · '+(v.indexed||0)+' recovered'+
-     (v.fullRebuild?' · rebuilding missing/damaged indexes':'');
-   }
-  });
-  const summary=stats.interrupted?'Catalog recovery stopped; the previous index is preserved.':
-   stats.fullRebuild?'Catalog recovered from saved HTML: '+stats.indexed+' messages.':
-   stats.indexed?'Added '+stats.indexed+' missing catalog entries; skipped '+stats.skipped+' existing ones.':
-   'Catalog is up to date; '+stats.skipped+' messages already indexed. No indexes rewritten.';
-  $('catalogStatus').textContent=summary;
-  if(!stats.interrupted){
-   try{await loadRootAccounts(target);}catch{}
-  }
-  return stats;
- }catch(e){
-  $('catalogStatus').textContent=e.message==='REINDEX_INCOMPLETE'
-   ?'Catalog recovery stopped: saved HTML validation failed. Previous catalog retained.'
-   :e.message==='LOCKED'
-    ?'Another tab is already writing to the archive. Close it and try again.'
-    :'Catalog recovery failed ('+(e.message||e.name||'unknown error')+'). No replacement published.';
-  throw e;
- }finally{repairBusy=false;$('stopReindex').hidden=true;operateControls(false);}
-}
-$('stopReindex').onclick=()=>repairController?.abort();
-
-function readerControls(active){
- active=active||busy||repairBusy||readerBusy;
- $('files').disabled=active;
- $('previewReaders').disabled=active;
- $('upgradeReaders').disabled=active;
- $('importAccountSelect').disabled=active;
- $('importAccount').disabled=active;
- ready();
-}
-function readerStatus(s){
- return s.scanned+' HTML messages checked · '+s.eligible+' older viewers eligible · '+s.current+' current · '+s.unsupported+' skipped · '+s.errors+' errors';
-}
+function readerControls(){ready();}
 function showExistingProgress(s){
  const bar=$('existingProgress'),total=s.total;
  bar.max=total===null?100:Math.max(total,1);
@@ -484,92 +418,60 @@ async function runExistingUpgrade(target,signal,title){
  }finally{$('stopReaders').hidden=true;}
 }
 $('previewReaders').onclick=async()=>{
- if(busy||repairBusy||readerBusy)return;
- let target;
- $('readerStatus').textContent='Requesting read access to archived_emails/…';
+ if(busy||repairBusy||readerBusy||accessBusy)return;
+ readerBusy=true;readerController=new AbortController();ready();
+ $('stopCheck').hidden=false;$('existingProgressPanel').hidden=true;
+ $('readerStatus').textContent='Checking archived_emails/ (read-only)…';
  try{
-  target=await ensureArchive({write:false});
-  if(!target){
-   $('readerStatus').textContent='No archived_emails/ folder yet. Start import to create it, or copy your account folders there.';
-   $('catalogStatus').textContent='0 saved messages found. No indexes rewritten.';
-   return;
-  }
- }catch(e){if(e.name!=='AbortError')$('readerStatus').textContent='Check existing could not start: '+errorText(e);return;}
- readerBusy=true;readerController=new AbortController();readerControls(true);$('stopCheck').hidden=false;
- $('existingProgressPanel').hidden=true;
- $('readerStatus').textContent='Checking saved HTML in archived_emails/…';
- $('catalogStatus').textContent='Checking current indexes (read-only)…';
- try{
-  const inventory=await ArchiveReindex.checkMissing(target,{
-   signal:readerController.signal,
-   onProgress:v=>{
-    $('catalogStatus').textContent=v.scanned+' saved HTML files scanned · '+v.indexed+
-     ' indexed · '+v.missing+' missing'+(v.damaged?' · damaged catalog':'');
+  const target=await ensureArchive({write:false});
+  const result=await ArchiveReindex.checkMissing(target,{
+   signal:readerController.signal,onProgress:v=>{
+    $('readerStatus').textContent=v.scanned+' HTML messages checked · '+(v.errors||0)+' unreadable/invalid · '+(v.brokenAttachments||0)+' missing attachments';
+    $('catalogStatus').textContent=v.indexed+' indexed · '+v.missing+' unindexed · '+(v.stale||0)+' stale references'+(v.damaged?' · damaged catalog':'');
    }
   });
-  if(inventory.interrupted){
-   $('readerStatus').textContent='Check existing stopped. No saved files were changed.';
-   return;
-  }
-  $('catalogStatus').textContent=inventory.damaged
-   ?'Catalog is missing or damaged. Reimport only existing will rebuild it from saved HTML.'
-   :inventory.missing
-    ?inventory.missing+' saved emails are not indexed. Use Reimport only existing to add them.'
-    :'Catalog is up to date; '+inventory.indexed+' messages already indexed. No indexes rewritten.';
-  const result=await ArchiveReaderUpgrade.refresh(target,{
-   signal:readerController.signal,onProgress:x=>{$('readerStatus').textContent=readerStatus(x);}
-  });
-  readerPreview=result.eligible;
-  $('readerStatus').textContent=readerStatus(result)+(result.interrupted?' Check stopped.':
-   result.errors?' Some pages could not be read; backups are recommended.':
-   ' Reimport only existing can rebuild indexes even if 0 viewers are eligible.');
- }catch(e){$('readerStatus').textContent='Check existing failed: '+errorText(e);}
- finally{readerBusy=false;$('stopCheck').hidden=true;readerControls(false);}
+  $('readerStatus').textContent=result.interrupted?'Check existing stopped. No files were changed.':
+   result.scanned+' HTML messages checked · '+result.errors+' unreadable/invalid · '+result.brokenAttachments+' missing attachments · '+result.missingOriginals+' missing EML copies. No files were changed.';
+  $('catalogStatus').textContent=result.damaged?'Catalog is missing or damaged. Use Rebuild index to recover it from saved HTML.':
+   result.missing||result.stale?result.missing+' saved messages are unindexed · '+result.stale+' stale catalog references. Use Rebuild index.':
+   'Catalog matches the saved files; '+result.indexed+' messages indexed.';
+ }catch(e){$('readerStatus').textContent='Check existing could not finish: '+errorText(e);}
+ finally{readerBusy=false;$('stopCheck').hidden=true;ready();}
 };
 $('upgradeReaders').onclick=async()=>{
- if(busy||repairBusy||readerBusy)return;
- let target;
- $('readerStatus').textContent='Requesting write access to archived_emails/…';
+ if(busy||repairBusy||readerBusy||accessBusy)return;
+ repairBusy=true;repairController=new AbortController();ready();
+ $('stopReindex').hidden=false;$('existingProgressPanel').hidden=true;
+ $('catalogStatus').textContent='Rebuilding indexes from saved HTML in archived_emails/…';
  try{
-  target=await ensureArchive({write:true});
- }catch(e){if(e.name!=='AbortError')$('readerStatus').textContent='Existing-only recovery could not start: '+errorText(e);return;}
- readerBusy=true;readerController=new AbortController();readerControls(true);
- $('stopReaders').hidden=false;
- try{
-  $('readerStatus').textContent='Refreshing eligible saved HTML viewers…';
-  const result=await runExistingUpgrade(target,readerController.signal,'Reimporting only existing saved HTML emails');
-  readerPreview=0;
-  if(result.interrupted||readerController.signal.aborted){
-   $('readerStatus').textContent='Existing-email refresh stopped; catalog rebuild was not started.';
-   return;
-  }
-  $('catalogStatus').textContent='Rebuilding the full index from archived_emails/ (including manually merged folders)…';
-  const indexed=await ArchiveReindex.rebuild(target,{
-   signal:readerController.signal,
-   onProgress:v=>{
-    $('catalogStatus').textContent='Reindexing archived_emails/: '+(v.scanned||0)+
-     ' HTML checked · '+(v.indexed||0)+' indexed · '+(v.errors||0)+' errors';
+  const target=await ensureArchive({write:true});
+  const result=await ArchiveReindex.rebuild(target,{
+   signal:repairController.signal,onProgress:v=>{
+    $('catalogStatus').textContent=v.scanned+' HTML files read · '+v.indexed+' indexed · '+v.errors+' errors';
    }
   });
-  if(indexed.interrupted||readerController.signal.aborted){
-   $('readerStatus').textContent='Reindex stopped; the previous catalog was preserved.';
-   return;
-  }
-  $('catalogStatus').textContent='Rebuilt catalog from '+indexed.indexed+
-   ' saved messages. Removed stale entries; no HTML messages or attachments deleted.';
-  $('readerStatus').textContent=result.errors
-   ?'Catalog rebuilt. Some older HTML viewer shells could not be updated: '+result.errors+' errors.'
-   :'Existing-only recovery complete: '+result.updated+' HTML viewers refreshed and '+indexed.indexed+' messages indexed.';
-  await readCatalog();await loadRootAccounts(target);
- }catch(e){$('readerStatus').textContent='Reimport only existing failed: '+errorText(e);}
- finally{readerBusy=false;$('stopReaders').hidden=true;readerControls(false);}
+  if(result.interrupted){$('catalogStatus').textContent='Rebuild stopped; the previous catalog was preserved.';return;}
+  $('catalogStatus').textContent='Rebuilt index: '+result.indexed+' messages · '+(result.brokenAttachments||0)+' missing attachments · '+(result.missingOriginals||0)+' missing EML copies. Message HTML and attachments were not changed.';
+  await readCatalog();
+ }catch(e){$('catalogStatus').textContent='Rebuild index failed: '+errorText(e);}
+ finally{repairBusy=false;$('stopReindex').hidden=true;ready();}
 };
+$('refreshViewers').onclick=async()=>{
+ if(busy||repairBusy||readerBusy||accessBusy)return;
+ readerBusy=true;readerController=new AbortController();ready();
+ try{
+  const target=await ensureArchive({write:true});
+  await runExistingUpgrade(target,readerController.signal,'Updating saved message appearance (optional)');
+ }catch(e){$('readerStatus').textContent='Appearance update failed: '+errorText(e);}
+ finally{readerBusy=false;$('stopReaders').hidden=true;ready();}
+};
+$('stopReindex').onclick=()=>repairController?.abort();
 $('stopCheck').onclick=()=>readerController?.abort();
 $('stopReaders').onclick=()=>{
  if(busy)controller?.abort();
  else readerController?.abort();
 };
-window.addEventListener('beforeunload',e=>{if(busy||repairBusy||readerBusy){e.preventDefault();e.returnValue='';}});
+window.addEventListener('beforeunload',e=>{if(busy||repairBusy||readerBusy||accessBusy){e.preventDefault();e.returnValue='';}});
 window.ArchiveUI={readCatalog,search,load,get root(){return root;},get records(){return records;},get catalog(){return catalog;}};
 readCatalog().catch(showBrowseError);
 })();

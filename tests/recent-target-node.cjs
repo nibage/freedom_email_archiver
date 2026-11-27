@@ -100,18 +100,19 @@ async function settled(test){for(let i=0;i<30&&!test();i++)await tick();assert(t
  assert.match(el('accessStatus').textContent,/Archive access ready/);
  await el('start').onclick();
  assert.equal(pickerCalls,1,'Import reuses authorized archived_emails without another chooser');
- assert.deepEqual(calls.slice(0,3),['sync','update','mbox:personal'],'Import must index/refresh before MBOX');
+ assert.deepEqual(calls,['mbox:personal'],'Import must process MBOX without scanning or updating the library');
  assert.equal(writeCount,0,'No index.html/assets may be rewritten');
  assert.match(el('status').textContent,/complete/i);
  // Reimport only existing always rebuilds the complete catalog, even with 0 viewer updates.
  calls.length=0;
  await el('previewReaders').onclick();
- assert(calls.includes('check')&&calls.includes('preview'));
+ assert.deepEqual(calls,['check'],'Check existing must perform only one read-only check');calls.length=0;
  assert.equal(pickerCalls,1,'Existing scan stays under archived_emails without another chooser');
  assert.equal(el('upgradeReaders').disabled,false);
  await el('upgradeReaders').onclick();
- assert.deepEqual(calls.slice(-2),['update','rebuild']);
- assert.match(el('catalogStatus').textContent,/Rebuilt catalog/);
+ assert.deepEqual(calls,['rebuild'],'Rebuild must not update message HTML');
+ assert.match(el('catalogStatus').textContent,/Rebuilt index/);
+ calls.length=0;await el('refreshViewers').onclick();assert.deepEqual(calls,['update'],'Appearance update is a separate explicit action');
  // A different OS directory is rejected before filesystem writes.
  const old=window.ArchiveUI.root;
  currentChoice=wrong;
@@ -122,6 +123,6 @@ async function settled(test){for(let i=0;i<30&&!test();i++)await tick();assert(t
  console.log('PASS file:// Browse uses archived_emails/ without permissions');
  console.log('PASS Start import and Check existing never open the folder chooser; one explicit grant is reused');
  console.log('PASS authorized import writes only beneath archived_emails/');
- console.log('PASS Reimport only existing always runs full index rebuild, even with 0 eligible old viewers');
+ console.log('PASS Rebuild index and optional appearance update are independent');
  console.log('PASS no arbitrary folder selector or app-copy controls');
 })().catch(e=>{console.error(e);process.exitCode=1;});

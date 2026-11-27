@@ -45,27 +45,33 @@ Click a message to read it. Without a granted folder handle, it opens its standa
 1. Before importing or scanning existing files for the first time, click **Enable archive access**. Chrome/Edge will ask you to select the **folder containing the opened `index.html`** (for example `email_archiver_root/`), **not** the MBOX and **not** the `archived_emails/` subfolder. This is a one-time authorization for reading/writing `archived_emails/`, not a separate data-root choice.
 2. Choose one or more MBOX files through the MBOX file selector, and select an existing account or **+ New account…**.
 3. Click **Start import**. Once the archive is authorized, it begins processing without opening another folder/file picker. If authorization is missing or expired, a clear status asks you to use **Enable archive access**; it never silently launches a chooser.
-4. The program checks and recovers saved indexes, refreshes eligible older HTML reader shells, then imports the MBOX to `archived_emails/<account>/`. Counters and progress show each phase and any error. MBOX source files are never modified.
+4. Import reads the selected MBOX and the saved metadata catalog for deduplication, then adds messages to `archived_emails/<account>/`. It does not scan all saved HTML, repair indexes or update old message appearance first. Source MBOX files are never modified. If the catalog is damaged, use **Rebuild index** explicitly before retrying.
 5. Go back to Browse. New messages appear in this **same** application; there is no second `index.html` to open.
 
-The one-time operating-system permission picker **cannot safely be bypassed by a local HTML page** and is used only by **Enable archive access**, never by **Start import**, **Check existing** or **Reimport only existing**. It grants access to the application directory; it is not a data-root selector. Chrome does not disclose an absolute filesystem path to the page, so the application checks the folder's name and files rather than claiming to verify the absolute path.
+The one-time operating-system permission picker **cannot safely be bypassed by a local HTML page** and is used only by **Enable archive access**, never by **Start import**, **Check existing** or **Rebuild index**. It grants access to the application directory; it is not a data-root selector. Chrome does not disclose an absolute filesystem path to the page, so the application checks the folder's name and files rather than claiming to verify the absolute path.
 
 ## Copying, replacing or merging saved email folders
 
 To move mail without its original MBOX, make a complete backup, then copy the account directories (for example `personal/`, `work/`) **into `archived_emails/`**. You may replace the entire `archived_emails/` directory to swap to another mail library. When merging folders, preserve existing files and resolve any Windows file-copy name conflicts carefully rather than blindly overwriting them.
 
-Click **Reimport only existing**. This performs two explicit operations, even if **Check existing** reports `0 older viewers eligible`:
+The operations are independent:
 
-- Refresh recognized older HTML message-viewer shells without rewriting the sender's original saved body or attachments.
-- **Fully rebuild** the master catalog and text-search indexes by scanning the HTML files actually present under all accounts. This adds newly copied files and drops stale index references to files that have been removed or moved, without deleting emails. The old catalog remains published until the new one validates. Corrupted or unsupported HTML is reported; an incomplete rebuild is not published.
+| Action | Reads | Changes |
+| --- | --- | --- |
+| **Start import** | Selected MBOX files and saved catalog | New messages/attachments, necessary duplicate label/EML metadata and incremental indexes |
+| **Check existing** | Saved HTML, catalog and attachment/EML references in archived_emails/ | Nothing; no writer lock |
+| **Rebuild index** (formerly Reimport only existing) | Saved HTML physically present under all accounts | Catalog and text-search indexes only |
+| **Update message appearance** under Optional appearance maintenance | Saved HTML reader shells | Recognized old message shells only; original body bytes and attachment files are preserved |
 
-**Check existing** scans **only `archived_emails/`** and is read-only: it reports unindexed HTML, missing catalog entries and older viewer eligibility. It requires a previously authorized folder handle because a `file://` page cannot enumerate directories by itself. Click **Enable archive access** first; **Check existing** will not open a picker. Reimport only existing works with **no MBOX file selected**, and is **never disabled just because no older viewers are eligible**.
+After copying, removing or merging account folders, use **Rebuild index** with no MBOX selected. It adds copied messages and drops stale catalog references without modifying or deleting saved HTML, attachments or EML files. The old catalog stays published until the replacement validates; an incomplete or invalid rebuild is not published. This operation works even when no old message appearance needs updating.
 
-A new MBOX import uses *incremental* catalog recovery, keeping previously saved mail even when omitted from the new export. A deliberate full rebuild, by contrast, reflects files physically present in `archived_emails/`.
+**Check existing** makes one read-only pass through saved HTML and validates catalog/search shards and local attachment/original references. It reports unindexed messages, stale catalog references, malformed/unreadable HTML and missing files. It does not silently repair anything or inspect the appearance version. Folder authorization is still required to enumerate local directories; the action never opens a new picker.
+
+A healthy normal MBOX import does not inspect unrelated HTML or run either maintenance operation. Its existing catalog preserves earlier indexed mail omitted from a new export. Manual filesystem changes become visible after an explicit index rebuild. Duplicate messages with older appearance are skipped too; choose optional appearance maintenance if desired. A changed label or optional EML retention may still update that particular duplicate's metadata.
 
 ### Recovering from a deleted `__email_archiver` folder
 
-If you still have `account/year/month/email-*.html` files and attachments from an older archive but deleted its separate `__email_archiver/` program/index folder, first back them up. Place **only the account folders** inside the new `email_archiver_root/archived_emails/` folder, retaining year/month and attachment subfolders. Do not copy an old root-level app or `__email_archiver/` into the new app. Then open the new `index.html`, click **Enable archive access** once, and choose **Reimport only existing**. It reconstructs a fresh catalog from the saved HTML, or explains if damaged files prevent recovery.
+If you still have `account/year/month/email-*.html` files and attachments from an older archive but deleted its separate `__email_archiver/` program/index folder, first back them up. Place **only the account folders** inside the new `email_archiver_root/archived_emails/` folder, retaining year/month and attachment subfolders. Do not copy an old root-level app or `__email_archiver/` into the new app. Then open the new `index.html`, click **Enable archive access** once, and choose **Rebuild index**. It reconstructs a fresh catalog from the saved HTML, or explains if damaged files prevent recovery.
 
 ## Backup and browser support
 
@@ -105,11 +111,11 @@ The EML is created from the MBOX message **without parsing and re-serializing it
 
 Dependency-free unit checks for EML byte extraction, real SHA-256 verification, corruption handling and selected MIME categories can be run with `node tests/eml-node.cjs` (Node 20+). For full native File System Access import tests, open `tests/index.html` in desktop Chrome/Edge and choose a disposable empty test folder.
 
-The **Repair catalog** tool preserves valid EML references from self-describing HTML, reports missing original files, and does not rewrite EML content. Keep source MBOX backups if cryptographic evidence matters. Always test on a copied archive before a large private import.
+The **Rebuild index** tool preserves valid EML references from self-describing HTML, reports missing original files, and does not rewrite EML content. Keep source MBOX backups if cryptographic evidence matters. Always test on a copied archive before a large private import.
 
 ### Browser regression checks
 
-The browser flow test opens the actual local index.html with networking disabled, clicks its controls and uses a disposable on-disk filesystem adapter. It covers old HTML without embedded metadata after authorization, CID images, first/repeated/overlapping imports, full-text search, Check existing, catalog rebuilding, rapid Start clicks and cancellation during preparation. It also executes the 74-check browser import-engine suite. The adapter is test-only: production import still uses the native File System Access API and still requires explicit folder authorization.
+The browser flow test opens the actual local index.html with networking disabled, clicks its controls and uses a disposable on-disk filesystem adapter. It covers old HTML without embedded metadata after authorization, CID images, first/repeated/overlapping imports, full-text search, Check existing, catalog rebuilding, rapid Start clicks, cancellation, manual folder merges, read-only file integrity and independent appearance maintenance. It also executes the 75-check browser import-engine suite. The adapter is test-only: production import still uses the native File System Access API and still requires explicit folder authorization.
 
 For development only, install Playwright and its Chromium binary, then run:
 
@@ -122,4 +128,4 @@ node tests/writer-lock-node.cjs
 
 Set CHROME_PATH to use an installed Chrome executable instead of Playwright Chromium. No Node or Playwright installation is required to use the archive. Tests create only fictional data in a temporary directory.
 
-Import, incremental catalog recovery and full rebuilding use bounded, cancellable writer acquisition. If another process or sync drive stalls the lock for 30 seconds, the action reports a lock timeout instead of waiting indefinitely; a lock that resolves after cancellation is closed. Stop during pre-import recovery explicitly reports that MBOX processing did not begin.
+Import and full rebuilding use bounded, cancellable writer acquisition. If another process or sync drive stalls the lock for 30 seconds, the action reports a lock timeout instead of waiting indefinitely; a lock that resolves after cancellation is closed. Import does not perform pre-import HTML recovery. The Stop controls are specific to each operation.

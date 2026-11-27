@@ -164,3 +164,8 @@ footer{justify-content:flex-end}
 .archive-access button{flex:0 0 auto}
 .archive-access .data-root-description{margin:0;flex:1;min-width:230px}
 @media(max-width:600px){.archive-access{align-items:stretch}.archive-access button{width:100%}}
+
+/* Appearance updates are optional maintenance, separate from import/indexing. */
+.optional-maintenance{margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
+.optional-maintenance summary{cursor:pointer;color:var(--muted);font-size:14px}
+.optional-maintenance p{font-size:14px;line-height:1.6}

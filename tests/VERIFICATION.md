@@ -1,3 +1,21 @@
+# Current workflow verification
+
+The current release separates four actions: MBOX import, a read-only archive check, index rebuilding and optional message appearance maintenance. The historical development notes below describe older workflows and are superseded by this section.
+
+Verified using the actual index.html through file:// in installed Chrome on Windows with networking disabled and a disposable on-disk File System Access adapter:
+
+- Import does not invoke an archive-wide scan, missing-index recovery or appearance update. First, repeated and overlapping imports update Browse and search correctly.
+- Check existing makes one read-only HTML pass and validates catalog/search and local file references. Hash snapshots show no files are changed. Manually copied and removed message folders are reported as unindexed/stale entries.
+- Rebuild index works without MBOX or prior checking. Snapshots confirm only indexes change; saved HTML, attachments, original EML and import reports are unchanged. It publishes only a completely validated replacement and preserves the old index when a saved message is malformed.
+- Unrelated malformed HTML does not block importing a valid MBOX into a healthy catalog.
+- Appearance maintenance runs only after clicking its own optional button. The test upgrades an old shell while preserving the main body bytes and leaving the manifest unchanged.
+- Rapid clicks cannot overlap writes; Stop returns the UI to an enabled state. Reopening file:// reads the rebuilt archive without a remembered directory handle.
+- The browser import-engine suite passes 75 checks, including explicit rather than automatic appearance refresh. Dependency-free Node suites verify the independent actions and bounded cancellable writer locks.
+
+The disk adapter and Playwright are development-only test tools. Native OS permission dialogs, the entire private 4.5 GB archive and pCloud synchronization were not retested for this change. Run tests/index.html with a separate disposable folder for native File System Access verification.
+
+## Historical verification notes (older workflows)
+
 # Verification of the English example release
 
 Tested using Chrome 155.0.8059.81 on Windows, opening local `file://` pages with networking disabled. No local HTTP server or file-origin security override was used.
