@@ -26,11 +26,21 @@ async function snapshot(dir,{messagesOnly=false}={}){
   assert.equal(await page.locator('img[src^="attachments/"]').count(),1,'CID attachment stays a relative local file');
   assert.equal(await page.locator('iframe').count(),0,'Saved mail opens as a full page, not an iframe');
   await page.locator('header a').first().click();await page.waitForFunction(()=>window.ArchiveUI?.records.size===4);
+  // The fake test filesystem handle is a JS object and cannot survive a full
+  // file:// reload in IndexedDB. Native Chrome handles can; reconnect this
+  // disposable test adapter before testing actual writes.
+  await page.click('#importTab');await page.click('#connectArchive');
+  await page.waitForFunction(()=>document.getElementById('accessStatus').textContent.includes('Archive access ready'));
   console.log('PASS full-page legacy HTML, relative CID and direct Back navigation');
   await page.evaluate(()=>{ArchiveReindex.syncMissing=()=>{throw Error('Unexpected implicit catalog scan');};});
   async function importFile(file){
    await page.click('#importTab');await page.locator('#files').setInputFiles(path.join(repo,'examples',file));await page.click('#start');
-   await page.waitForFunction(()=>document.getElementById('stop').hidden&&document.getElementById('status').textContent==='Import complete');
+   try{
+    await page.waitForFunction(()=>document.getElementById('stop').hidden&&document.getElementById('status').textContent==='Import complete',null,{timeout:15000});
+   }catch(e){
+    const status=await page.locator('#status').textContent(),detail=await page.locator('#progressDetail').textContent(),notice=await page.locator('#operationNotice').textContent();
+    throw new Error('MBOX import did not complete (status '+status+'; detail '+detail+'; notice '+notice+'): '+e.message);
+   }
   }
   const originalMessages=await snapshot(data,{messagesOnly:true});
   await importFile('example.mbox');assert.equal(await page.locator('#newCount').textContent(),'4');assert.equal(await page.evaluate(()=>ArchiveUI.records.size),8);
