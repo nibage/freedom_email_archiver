@@ -21,33 +21,67 @@ async function snapshot(dir,{messagesOnly=false}={}){
   await page.click('#connectArchive');await page.waitForFunction(()=>!document.getElementById('connectArchive').disabled);
   assert.match(await page.locator('#accessStatus').textContent(),/Archive access ready/);
   await page.click('#browseTab');await page.locator('.subject').filter({hasText:'A tiny trip plan'}).click();
-  await page.frameLocator('#messageFrame').locator('h1').waitFor();await page.frameLocator('#messageFrame').locator('img[src^="blob:"]').waitFor();
-  assert.equal(await page.frameLocator('#messageFrame').locator('script').count(),0);await page.click('#closeMessage');
-  console.log('PASS authorized viewer opens legacy HTML and CID');
-  await page.evaluate(()=>{
-   window.actualRefresh=ArchiveReaderUpgrade.refresh;window.refreshCalls=0;
-   ArchiveReaderUpgrade.refresh=(...args)=>{window.refreshCalls++;return actualRefresh(...args);};
-   ArchiveReindex.syncMissing=()=>{throw Error('Unexpected implicit catalog scan');};
-  });
+  await page.locator('h1').filter({hasText:'A tiny trip plan'}).waitFor();
+  assert.match(page.url(),/email-[a-f0-9]{64}\.html\?/);
+  assert.equal(await page.locator('iframe').count(),0);
+  await page.waitForFunction(()=>{const img=document.querySelector('main img');return img?.complete&&img.naturalWidth>0;});
+  await page.goBack();await page.waitForFunction(()=>window.ArchiveUI?.records.size===4);
+  console.log('PASS authorized browsing opens standalone HTML and CID');
+  async function ensureTestAccess(){
+   if(!await page.evaluate(()=>!!ArchiveUI.root)){
+    await page.click('#importTab');await page.click('#connectArchive');
+    await page.waitForFunction(()=>!!ArchiveUI.root&&!document.getElementById('connectArchive').disabled);
+   }
+   await page.evaluate(()=>{ArchiveReindex.syncMissing=()=>{throw Error('Unexpected implicit catalog scan');};});
+  }
   async function importFile(file){
+   await ensureTestAccess();
    await page.click('#importTab');await page.locator('#files').setInputFiles(path.join(repo,'examples',file));await page.click('#start');
    await page.waitForFunction(()=>document.getElementById('stop').hidden&&document.getElementById('status').textContent==='Import complete');
   }
   const originalMessages=await snapshot(data,{messagesOnly:true});
   await importFile('example.mbox');assert.equal(await page.locator('#newCount').textContent(),'4');assert.equal(await page.evaluate(()=>ArchiveUI.records.size),8);
   for(const [name,sum] of Object.entries(originalMessages))assert.equal((await snapshot(data,{messagesOnly:true}))[name],sum,'Import must not upgrade unrelated saved HTML');
+  await page.click('#browseTab');await page.selectOption('#accountFilter','personal');
+  await page.waitForFunction(()=>document.getElementById('rows').children.length===4);
+  for(const mode of ['dark','light']){
+   if(await page.locator('html').getAttribute('data-theme')!==mode)await page.click('#themeToggle');
+   await page.locator('.subject').filter({hasText:'A tiny trip plan'}).click();
+   await page.locator('#backToArchive').waitFor();
+   assert.equal(await page.locator('html').getAttribute('data-theme'),mode);
+   assert.equal(await page.locator('iframe').count(),0);
+   await page.click('#backToArchive');await page.waitForFunction(()=>window.ArchiveUI?.records.size===8&&document.getElementById('accountFilter').value==='personal');
+  }
+  await page.click('#reset');
   await importFile('example.mbox');assert.equal(await page.locator('#newCount').textContent(),'0');assert.equal(await page.locator('#dupeCount').textContent(),'4');
   await importFile('overlap.mbox');assert.equal(await page.locator('#newCount').textContent(),'1');assert.equal(await page.locator('#dupeCount').textContent(),'1');
-  assert.equal(await page.evaluate(()=>refreshCalls),0);console.log('PASS import reads only MBOX/catalog: no library scan or appearance update');
+  console.log('PASS import reads only MBOX/catalog: no library scan or appearance update');
   await page.click('#browseTab');await page.fill('#query','lighthouse');await page.waitForFunction(()=>document.getElementById('rows').children.length===2);await page.click('#reset');
   await fs.cp(path.join(data,'example'),path.join(data,'merged'),{recursive:true});
   await page.click('#importTab');await page.locator('#files').setInputFiles([]);
+  await page.evaluate(()=>{
+   window.maintenanceEvents=[];
+   for(const name of ['checkMissing','rebuild']){
+    const original=ArchiveReindex[name];
+    ArchiveReindex[name]=(root,options)=>original(root,{...options,onProgress:state=>{
+     options.onProgress(state);const bar=document.getElementById('existingProgress');
+     maintenanceEvents.push({name,phase:state.phase,total:state.total,scanned:state.scanned,indeterminate:!bar.hasAttribute('value'),visible:!document.getElementById('existingProgressPanel').hidden});
+    }});
+   }
+  });
   const beforeCheck=await snapshot(data);await page.click('#previewReaders');await page.waitForFunction(()=>document.getElementById('stopCheck').hidden);
   assert.match(await page.locator('#readerStatus').textContent(),/13 HTML messages checked/);assert.match(await page.locator('#catalogStatus').textContent(),/4 saved messages are unindexed/);
-  assert.deepEqual(await snapshot(data),beforeCheck,'Check existing must not write any file');assert.equal(await page.evaluate(()=>refreshCalls),0);
+  assert.equal(await page.locator('#existingProgressPanel').isVisible(),true);assert.equal(await page.locator('#existingProgress').evaluate(el=>el.value===el.max),true);
+  assert.deepEqual(await snapshot(data),beforeCheck,'Check existing must not write any file');
   const beforeRebuild=await snapshot(data,{messagesOnly:true});await page.click('#upgradeReaders');await page.waitForFunction(()=>!document.getElementById('upgradeReaders').disabled);
   assert.match(await page.locator('#catalogStatus').textContent(),/13 messages/);assert.equal(await page.evaluate(()=>ArchiveUI.records.size),13);
-  assert.deepEqual(await snapshot(data,{messagesOnly:true}),beforeRebuild,'Rebuild must not rewrite HTML, attachments, EML or import reports');assert.equal(await page.evaluate(()=>refreshCalls),0);
+  assert.equal(await page.locator('#existingProgressPanel').isVisible(),true);assert.equal(await page.locator('#existingProgress').evaluate(el=>el.value===el.max),true);
+  for(const name of ['checkMissing','rebuild']){
+   const events=await page.evaluate(name=>maintenanceEvents.filter(e=>e.name===name),name);
+   assert.ok(events.some(e=>e.phase==='counting'&&e.indeterminate&&e.visible));
+   assert.ok(events.some(e=>e.phase==='scanning'&&e.total===13&&e.scanned>0&&!e.indeterminate&&e.visible));
+  }
+  assert.deepEqual(await snapshot(data,{messagesOnly:true}),beforeRebuild,'Rebuild must not rewrite HTML, attachments, EML or import reports');
   const removed=await page.evaluate(()=>[...ArchiveUI.records.values()].find(r=>r.account==='merged'&&r.subject==='Welcome to your email archive').path);
   await fs.unlink(path.join(data,removed));await page.click('#previewReaders');await page.waitForFunction(()=>document.getElementById('stopCheck').hidden);
   assert.match(await page.locator('#catalogStatus').textContent(),/1 stale catalog references/);
@@ -61,13 +95,7 @@ async function snapshot(dir,{messagesOnly=false}={}){
   await page.click('#upgradeReaders');await page.waitForFunction(()=>!document.getElementById('upgradeReaders').disabled);assert.match(await page.locator('#catalogStatus').textContent(),/failed/);
   assert.equal(await fs.readFile(path.join(data,'catalog/archive.js'),'utf8'),manifestBefore);await fs.writeFile(modernFile,valid);
   console.log('PASS unrelated malformed HTML does not block MBOX import; strict rebuild preserves last good index');
-  await fs.writeFile(modernFile,valid.replace('"renderVersion":2','"renderVersion":1'));
-  const main=/<main>([\s\S]*?)<\/main>/.exec(valid)[1];await page.locator('summary').filter({hasText:'Optional appearance'}).click();
-  await page.click('#refreshViewers');await page.waitForFunction(()=>!document.getElementById('refreshViewers').disabled);
-  assert.match(await page.locator('#existingProgressDetail').textContent(),/1 saved HTML pages updated/);
-  assert.equal(/<main>([\s\S]*?)<\/main>/.exec(await fs.readFile(modernFile,'utf8'))[1],main);
-  assert.equal(await fs.readFile(path.join(data,'catalog/archive.js'),'utf8'),manifestBefore);assert.equal(await page.evaluate(()=>refreshCalls),1);
-  console.log('PASS optional appearance update is explicit, preserves body/attachments and does not rebuild indexes');
+  assert.equal(await page.locator('#refreshViewers').count(),0);
   await page.locator('#files').setInputFiles(path.join(repo,'examples/example.mbox'));
   await page.evaluate(()=>{const run=ArchiveCore.Importer.prototype.run;window.testRuns=0;window.restoreRun=()=>ArchiveCore.Importer.prototype.run=run;
    ArchiveCore.Importer.prototype.run=async function(){window.testRuns++;await new Promise(r=>this.signal.addEventListener('abort',r,{once:true}));return {interrupted:true,issues:[]};};});

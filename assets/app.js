@@ -76,47 +76,10 @@ async function search(){const v=++queryVersion;currentPage=0;const terms=C.fold(
  if(!terms.length){matches=candidates;render();return;}const wanted=new Map(),found=new Set();for(const r of candidates){const key=r.account+'/'+r.id,meta=metadataText(r);if(terms.every(t=>meta.includes(t)))found.add(key);else wanted.set(key,meta);}
  $('resultInfo').textContent='Searching local text indexes…';let done=0;for(const seg of catalog.segments){if(v!==queryVersion)return;if(!seg.search)continue;let data=cache.get(seg.search);if(!data){data=await loadArchiveSegment(seg.search,root);cache.set(seg.search,data);if(cache.size>4)cache.delete(cache.keys().next().value);}for(const x of data.records){const meta=wanted.get(x.key);if(meta!==undefined){const hay=meta+' '+C.fold(x.text);if(terms.every(t=>hay.includes(t)))found.add(x.key);}}done++;if(done%5===0){$('resultInfo').textContent='Searched '+done+' indexes…';await new Promise(r=>setTimeout(r,0));}}
  if(v!==queryVersion)return;matches=candidates.filter(r=>found.has(r.account+'/'+r.id));render();}
-let openMessageRecord=null,messageResources=null,openedRoot=null,openedMessageVersion=0,savedBrowseScroll=0,messageImagesApproved=false;
-function closeMessage(){
- openedMessageVersion++;
- $('messageViewer').hidden=true;$('browseList').hidden=false;
- $('messageFrame').removeAttribute('src');
- requestAnimationFrame(()=>window.scrollTo(0,savedBrowseScroll));
- $('loadMessageImages').hidden=true;
- openMessageRecord=null;openedRoot=null;messageImagesApproved=false;
- if(messageResources){messageResources.dispose();messageResources=null;}
-}
-async function showMessage(record,{loadExternal=false}={}){
- if(!root)return;
- if(!openMessageRecord)savedBrowseScroll=window.scrollY||0;
- const chosenRoot=root,version=++openedMessageVersion;
- const theme=document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light';
- $('messageInfo').textContent='Opening saved email…';
- $('messageViewer').hidden=false;$('browseList').hidden=true;
- try{
-  const rendered=await ArchiveDataReader.open(chosenRoot,record,{
-   theme,autoImages:loadExternal||messageImagesApproved||$('autoImages').checked
-  });
-  if(root!==chosenRoot||version!==openedMessageVersion){rendered.dispose();return;}
-  const previous=messageResources;messageResources=rendered;
-  $('messageFrame').src=rendered.url;
-  if(previous)previous.dispose();
-  openMessageRecord=record;openedRoot=chosenRoot;
-  $('loadMessageImages').hidden=!rendered.hasRemoteImages||loadExternal||messageImagesApproved||$('autoImages').checked;
-  $('messageInfo').textContent=record.subject||'(No subject)';
-  window.scrollTo(0,0);
- }catch(e){
-  closeMessage();
-  browseNotice('Could not open this saved message: '+(e.message||e.name)+'. No archive files were changed.');
- }
-}
-$('closeMessage').onclick=()=>closeMessage();
-$('loadMessageImages').onclick=()=>{if(openMessageRecord&&root===openedRoot){messageImagesApproved=true;void showMessage(openMessageRecord,{loadExternal:true});}};
-function render(){const size=+$('pageSize').value,pages=Math.max(1,Math.ceil(matches.length/size));currentPage=Math.min(currentPage,pages-1);$('rows').replaceChildren();for(const r of matches.slice(currentPage*size,(currentPage+1)*size)){const tr=document.createElement('tr');const tdDate=document.createElement('td');tdDate.className='date';tdDate.textContent=r.date?new Date(r.date).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Unknown date';const tdAddr=document.createElement('td');tdAddr.textContent=r.from||'(Not specified)';const to=document.createElement('span');to.className='address';to.textContent='To: '+(r.to||'—');tdAddr.append(to);const tdSub=document.createElement('td');const a=document.createElement('a');a.className='subject';a.textContent=r.subject||'(No subject)';a.href=root?'#saved-email':'archived_emails/'+r.path.split('/').map(encodeURIComponent).join('/')+'?fromArchive=1&images='+($('autoImages').checked?'auto':'manual')+'&theme='+(document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light');a.target='_self';a.addEventListener('click',e=>{
- if(root){e.preventDefault();void showMessage(r);return;}
+function render(){const size=+$('pageSize').value,pages=Math.max(1,Math.ceil(matches.length/size));currentPage=Math.min(currentPage,pages-1);$('rows').replaceChildren();for(const r of matches.slice(currentPage*size,(currentPage+1)*size)){const tr=document.createElement('tr');const tdDate=document.createElement('td');tdDate.className='date';tdDate.textContent=r.date?new Date(r.date).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Unknown date';const tdAddr=document.createElement('td');tdAddr.textContent=r.from||'(Not specified)';const to=document.createElement('span');to.className='address';to.textContent='To: '+(r.to||'—');tdAddr.append(to);const tdSub=document.createElement('td');const a=document.createElement('a');a.className='subject';a.textContent=r.subject||'(No subject)';a.href='archived_emails/'+r.path.split('/').map(encodeURIComponent).join('/')+'?fromArchive=1&images='+($('autoImages').checked?'auto':'manual')+'&theme='+(document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light');a.target='_self';a.addEventListener('click',e=>{
  if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey)saveReturnPosition();
 });tdSub.append(a);for(const text of [r.account,...r.labels]){const s=document.createElement('span');s.className='badge';s.textContent=text;tdSub.append(s);}const tdAtt=document.createElement('td');tdAtt.textContent=(r.attachments.length?'⌕ '+r.attachments.length:'—')+(r.original?' · EML':'');tr.append(tdDate,tdAddr,tdSub,tdAtt);$('rows').append(tr);}$('empty').hidden=!!matches.length;$('resultInfo').textContent=matches.length.toLocaleString('en-GB')+' messages'+(matches.length!==all.length?' of '+all.length.toLocaleString('en-GB'):'');$('pageInfo').textContent=(currentPage+1)+' / '+pages;$('prev').disabled=currentPage===0;$('next').disabled=currentPage>=pages-1;}
-let timer;for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>search().catch(showBrowseError),200);});window.addEventListener('archive-theme-change',()=>{render();if(openMessageRecord&&root===openedRoot)void showMessage(openMessageRecord,{loadExternal:messageImagesApproved});});$('pageSize').onchange=render;$('prev').onclick=()=>{currentPage--;render();};$('next').onclick=()=>{currentPage++;render();};$('reset').onclick=()=>{for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).value='';search().catch(showBrowseError);};
+let timer;for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>search().catch(showBrowseError),200);});window.addEventListener('archive-theme-change',render);$('pageSize').onchange=render;$('prev').onclick=()=>{currentPage--;render();};$('next').onclick=()=>{currentPage++;render();};$('reset').onclick=()=>{for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).value='';search().catch(showBrowseError);};
 function tab(which){
  $('browse').hidden=which!=='browse';
  $('import').hidden=which!=='import';
@@ -127,7 +90,7 @@ $('importTab').onclick=()=>tab('import');
 function ready(){
  const active=busy||repairBusy||readerBusy||accessBusy;
  $('start').disabled=active||!$('files').files.length;
- for(const id of ['files','importAccountSelect','importAccount','connectArchive','previewReaders','upgradeReaders','refreshViewers','retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=active;
+ for(const id of ['files','importAccountSelect','importAccount','connectArchive','previewReaders','upgradeReaders','retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=active;
 }
 const viewerKey=location.pathname;
 const folderPreference='app-root:'+viewerKey,accountPreference='account:'+viewerKey;
@@ -330,7 +293,7 @@ $('start').onclick=async()=>{
   else{notice(errorText(e));$('status').textContent=importStarted?'Import failed':'Import not started';$('progressDetail').textContent=errorText(e);}
   if(target)try{await readCatalog();}catch{}
  }finally{
-  busy=false;$('stop').hidden=true;$('stopReaders').hidden=true;$('connectArchive').disabled=false;
+  busy=false;$('stop').hidden=true;$('connectArchive').disabled=false;
   $('previewReaders').disabled=false;$('upgradeReaders').disabled=false;
   $('files').disabled=false;$('importAccount').disabled=false;$('importAccountSelect').disabled=false;
   for(const id of ['retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=false;
@@ -339,8 +302,7 @@ $('start').onclick=async()=>{
 };
 $('stop').onclick=()=>{
  controller?.abort();
- if(!$('progressPanel').hidden)$('status').textContent='Stopping after the current message and committing the catalog…';
- else $('existingProgressTitle').textContent='Stopping existing-email updates…';
+ $('status').textContent='Stopping after the current message and committing the catalog…';
 };
 function errorText(e){
  const msgs={
@@ -364,113 +326,80 @@ function showBrowseError(e){browseNotice(errorText(e));}
 
 let repairBusy=false,repairController=null;
 function readerControls(){ready();}
-function showExistingProgress(s){
- const bar=$('existingProgress'),total=s.total;
- bar.max=total===null?100:Math.max(total,1);
- bar.value=total===null?0:Math.min(s.scanned,Math.max(total,1));
- $('existingScanned').textContent=String(s.scanned);
- $('existingUpdated').textContent=String(s.updated);
- $('existingSkipped').textContent=String(s.current+s.unsupported);
- $('existingErrors').textContent=String(s.errors);
- let detail;
- if(s.phase==='counting'){
-  detail='Counting saved HTML files: '+s.counted+' found. No email content has been opened yet.';
- }else if(s.phase==='waiting-lock'){
-  detail=s.total+' HTML files found. Waiting for exclusive archive write access; close other archive tabs if this takes too long.';
- }else if(s.phase==='writing'){
-  detail='Saving a verified saved-email page · '+s.scanned+' / '+s.total+
-   ' checked · '+s.updated+' updated so far…';
- }else{
-  detail=total===null
-   ?s.scanned+' saved HTML messages checked…'
-   :s.scanned+' / '+total+' HTML files checked · '+s.eligible+' older pages eligible · '+
-    s.updated+' updated · '+(s.current+s.unsupported)+' skipped · '+s.errors+' errors';
- }
- $('existingProgressDetail').textContent=detail;
-}
-async function runExistingUpgrade(target,signal,title){
+function beginMaintenance(title){
+ $('progressPanel').hidden=true;notice('');
  $('existingProgressPanel').hidden=false;
  $('existingProgressTitle').textContent=title;
- $('existingProgress').max=100;$('existingProgress').value=0;
- $('existingScanned').textContent='0';$('existingUpdated').textContent='0';
- $('existingSkipped').textContent='0';$('existingErrors').textContent='0';
- $('existingProgressDetail').textContent='Counting saved HTML messages…';
- $('stopReaders').hidden=false;
- try{
-  const result=await ArchiveReaderUpgrade.refresh(target,{
-   signal,write:true,onProgress:showExistingProgress
-  });
-  showExistingProgress(result);
-  $('existingProgressTitle').textContent=result.interrupted?'Existing-email update stopped':
-   result.errors?'Existing-email update completed with errors':'Existing-email update complete';
-  $('existingProgressDetail').textContent=
-   result.updated+' saved HTML pages updated · '+result.current+' already current · '+result.unsupported+' unsupported/skipped · '+result.errors+' errors'+
-   (result.interrupted?' · stopped safely.':' · finished.');
-  return result;
- }catch(e){
-  $('existingProgressTitle').textContent='Existing-email update failed';
-  $('existingProgressDetail').textContent=e.message==='ARCHIVE_LOCK_TIMEOUT'
-   ?'Could not acquire the archive write lock. Close other archive tabs and check the sync drive, then try again.'
-   :e.message==='LOCKED'
-    ?'Another tab is writing to this archive. Close it and retry.'
-    :'Existing-email update failed ('+(e.message||e.name||'unknown error')+'). Check permissions, disk space and your backup.';
-  throw e;
- }finally{$('stopReaders').hidden=true;}
+ $('existingProgress').max=1;$('existingProgress').removeAttribute('value');
+ $('existingProgressDetail').textContent='Preparing archive…';
+ $('readerStatus').textContent='';$('catalogStatus').textContent='';
+}
+function maintenanceProgress(s){
+ const bar=$('existingProgress');
+ if(s.phase==='counting'){
+  bar.removeAttribute('value');
+  $('existingProgressDetail').textContent='Counting saved HTML files · '+s.counted+' found…';
+ }else if(Number.isFinite(s.total)){
+  bar.max=Math.max(s.total,1);
+  // Reserve the last step until verification or index publication has finished.
+  bar.max+=1;
+  bar.value=Math.min(s.scanned,bar.max-1);
+  $('existingProgressDetail').textContent=s.scanned+' / '+s.total+' HTML files processed'+(s.phase==='publishing'?' · Saving catalog…':'');
+ }else{
+  bar.removeAttribute('value');
+  $('existingProgressDetail').textContent=s.phase==='catalog'?'Validating catalog and search indexes…':'Preparing archive…';
+ }
+}
+function finishMaintenance(title,complete){
+ $('existingProgressTitle').textContent=title;
+ const bar=$('existingProgress');
+ if(complete)bar.value=bar.max;
+ else if(!bar.hasAttribute('value'))bar.value=0;
 }
 $('previewReaders').onclick=async()=>{
  if(busy||repairBusy||readerBusy||accessBusy)return;
  readerBusy=true;readerController=new AbortController();ready();
- $('stopCheck').hidden=false;$('existingProgressPanel').hidden=true;
+ beginMaintenance('Checking existing messages…');$('stopCheck').hidden=false;
  $('readerStatus').textContent='Checking archived_emails/ (read-only)…';
  try{
   const target=await ensureArchive({write:false});
   const result=await ArchiveReindex.checkMissing(target,{
    signal:readerController.signal,onProgress:v=>{
+    maintenanceProgress(v);
     $('readerStatus').textContent=v.scanned+' HTML messages checked · '+(v.errors||0)+' unreadable/invalid · '+(v.brokenAttachments||0)+' missing attachments';
     $('catalogStatus').textContent=v.indexed+' indexed · '+v.missing+' unindexed · '+(v.stale||0)+' stale references'+(v.damaged?' · damaged catalog':'');
    }
   });
+  finishMaintenance(result.interrupted?'Check stopped':'Check complete',!result.interrupted);
   $('readerStatus').textContent=result.interrupted?'Check existing stopped. No files were changed.':
    result.scanned+' HTML messages checked · '+result.errors+' unreadable/invalid · '+result.brokenAttachments+' missing attachments · '+result.missingOriginals+' missing EML copies. No files were changed.';
-  $('catalogStatus').textContent=result.damaged?'Catalog is missing or damaged. Use Rebuild index to recover it from saved HTML.':
+  $('catalogStatus').textContent=result.interrupted?'Catalog verification incomplete.':result.damaged?'Catalog is missing or damaged. Use Rebuild index to recover it from saved HTML.':
    result.missing||result.stale?result.missing+' saved messages are unindexed · '+result.stale+' stale catalog references. Use Rebuild index.':
    'Catalog matches the saved files; '+result.indexed+' messages indexed.';
- }catch(e){$('readerStatus').textContent='Check existing could not finish: '+errorText(e);}
+ }catch(e){finishMaintenance('Check failed',false);$('readerStatus').textContent='Check existing could not finish: '+errorText(e);}
  finally{readerBusy=false;$('stopCheck').hidden=true;ready();}
 };
 $('upgradeReaders').onclick=async()=>{
  if(busy||repairBusy||readerBusy||accessBusy)return;
  repairBusy=true;repairController=new AbortController();ready();
- $('stopReindex').hidden=false;$('existingProgressPanel').hidden=true;
+ beginMaintenance('Rebuilding index…');$('stopReindex').hidden=false;
  $('catalogStatus').textContent='Rebuilding indexes from saved HTML in archived_emails/…';
  try{
   const target=await ensureArchive({write:true});
   const result=await ArchiveReindex.rebuild(target,{
    signal:repairController.signal,onProgress:v=>{
+    maintenanceProgress(v);
     $('catalogStatus').textContent=v.scanned+' HTML files read · '+v.indexed+' indexed · '+v.errors+' errors';
    }
   });
-  if(result.interrupted){$('catalogStatus').textContent='Rebuild stopped; the previous catalog was preserved.';return;}
+  if(result.interrupted){finishMaintenance('Rebuild stopped',false);$('catalogStatus').textContent='Rebuild stopped; the previous catalog was preserved.';return;}
   $('catalogStatus').textContent='Rebuilt index: '+result.indexed+' messages · '+(result.brokenAttachments||0)+' missing attachments · '+(result.missingOriginals||0)+' missing EML copies. Message HTML and attachments were not changed.';
-  await readCatalog();
- }catch(e){$('catalogStatus').textContent='Rebuild index failed: '+errorText(e);}
+  await readCatalog();finishMaintenance('Rebuild complete',true);
+ }catch(e){finishMaintenance('Rebuild failed',false);$('catalogStatus').textContent='Rebuild index failed: '+errorText(e);}
  finally{repairBusy=false;$('stopReindex').hidden=true;ready();}
-};
-$('refreshViewers').onclick=async()=>{
- if(busy||repairBusy||readerBusy||accessBusy)return;
- readerBusy=true;readerController=new AbortController();ready();
- try{
-  const target=await ensureArchive({write:true});
-  await runExistingUpgrade(target,readerController.signal,'Updating saved message appearance (optional)');
- }catch(e){$('readerStatus').textContent='Appearance update failed: '+errorText(e);}
- finally{readerBusy=false;$('stopReaders').hidden=true;ready();}
 };
 $('stopReindex').onclick=()=>repairController?.abort();
 $('stopCheck').onclick=()=>readerController?.abort();
-$('stopReaders').onclick=()=>{
- if(busy)controller?.abort();
- else readerController?.abort();
-};
 window.addEventListener('beforeunload',e=>{if(busy||repairBusy||readerBusy||accessBusy){e.preventDefault();e.returnValue='';}});
 window.ArchiveUI={readCatalog,search,load,get root(){return root;},get records(){return records;},get catalog(){return catalog;}};
 readCatalog().catch(showBrowseError);

@@ -26,6 +26,17 @@ async function* scan(root){
   }
  }
 }
+// Count filenames only; do not read message bodies or retain file handles.
+async function countSources(root,signal,notify){
+ let counted=0;
+ notify({phase:'counting',counted});
+ for await(const source of scan(root)){
+  if(signal?.aborted)break;
+  counted++;
+  if(counted%100===0){notify({phase:'counting',counted});await new Promise(r=>setTimeout(r,0));}
+ }
+ return counted;
+}
 const safeAttachmentHref=href=>{
  if(typeof href!=='string'||!href.startsWith('attachments/'))return false;
  try{
@@ -85,9 +96,12 @@ async function rebuild(root,{signal,onProgress=()=>{},batchSize=100,lockHeld=fal
  const lock=lockHeld?null:new C.Importer(root,{signal});
  if(signal?.aborted)return {scanned:0,indexed:0,interrupted:true,committed:false};
  if(lock)await lock.lock();
- const stats={scanned:0,indexed:0,legacyRecovered:0,duplicates:0,errors:0,brokenAttachments:0,missingOriginals:0,segments:0,committed:false};
+ const stats={phase:'preparing',total:null,scanned:0,indexed:0,legacyRecovered:0,duplicates:0,errors:0,brokenAttachments:0,missingOriginals:0,segments:0,committed:false};
  const notify=()=>onProgress({...stats});
  try{
+  stats.total=await countSources(root,signal,v=>onProgress({...stats,...v}));
+  if(signal?.aborted)return {...stats,interrupted:true};
+  stats.phase='scanning';notify();
   let previous;
   try{previous=await C.manifest(root);}catch{previous=C.empty();}
   const seen=new Set(),segments=[],accounts=new Set(),failures=[];
@@ -121,12 +135,14 @@ async function rebuild(root,{signal,onProgress=()=>{},batchSize=100,lockHeld=fal
     batch.push(record);search.push({key,text});accounts.add(source.account);stats.indexed++;
     if(batch.length>=batchSize)await flush();
    }catch(e){stats.errors++;if(failures.length<5)failures.push({path:source.path,code:e.message||e.name||'READ_ERROR'});}
-   if(stats.scanned%25===0){notify();await new Promise(resolve=>setTimeout(resolve,0));}
+   if(stats.scanned<=5||stats.scanned%25===0){notify();await new Promise(resolve=>setTimeout(resolve,0));}
   }
   if(signal?.aborted)return {...stats,interrupted:true};
   // A partial replacement index could hide otherwise intact messages.
   if(stats.errors||stats.duplicates){const err=Error('REINDEX_INCOMPLETE');err.details={...stats,failures,previousCatalog:previous.segments.length>0};throw err;}
+  stats.phase='publishing';notify();
   await flush();
+  if(signal?.aborted)return {...stats,interrupted:true};
   const next={kind:'manifest',format:C.VERSION,generation:(previous.generation||0)+1,
    created:previous.created||new Date().toISOString(),updated:new Date().toISOString(),
    accounts:[...accounts].sort(),segments,total:stats.indexed,rebuild:{scanned:stats.scanned,errors:stats.errors,brokenAttachments:stats.brokenAttachments,missingOriginals:stats.missingOriginals}};
@@ -134,7 +150,7 @@ async function rebuild(root,{signal,onProgress=()=>{},batchSize=100,lockHeld=fal
   const paths=await C.catalogPaths(root);
    await C.write(root,paths.previous,C.wrap(previous));
    await C.write(root,paths.current,C.wrap(next));
-  stats.committed=true;notify();
+  stats.committed=true;stats.phase='complete';notify();
   return {...stats,interrupted:false};
  }finally{if(lock?.lockWriter)await lock.lockWriter.close();}
 }
@@ -225,8 +241,9 @@ async function syncMissing(root,{signal,onProgress=()=>{},batchSize=100}={}){
 /* Read-only deep inventory for Check existing. Unlike syncMissing, this never
    opens a writer or changes catalog files. */
 async function checkMissing(root,{signal,onProgress=()=>{}}={}){
- const stats={scanned:0,indexed:0,missing:0,stale:0,validated:0,duplicates:0,damaged:false,errors:0,brokenAttachments:0,missingOriginals:0,interrupted:false};
+ const stats={phase:'catalog',total:null,scanned:0,indexed:0,missing:0,stale:0,validated:0,duplicates:0,damaged:false,errors:0,brokenAttachments:0,missingOriginals:0,interrupted:false};
  const notify=()=>onProgress({...stats}),known=new Map(),present=new Set(),seenKeys=new Set();
+ notify();
  try{
   const m=await C.manifest(root);
   for(const seg of m.segments){
@@ -241,7 +258,9 @@ async function checkMissing(root,{signal,onProgress=()=>{}}={}){
    }
   }
  }catch{stats.damaged=true;}
- notify();
+ stats.total=await countSources(root,signal,v=>onProgress({...stats,...v}));
+ if(signal?.aborted){stats.interrupted=true;return stats;}
+ stats.phase='scanning';notify();
  for await(const source of scan(root)){
   if(signal?.aborted){stats.interrupted=true;break;}
   stats.scanned++;
@@ -258,6 +277,7 @@ async function checkMissing(root,{signal,onProgress=()=>{}}={}){
  }
  // Do not present the unscanned remainder as missing after cancellation.
  if(!stats.interrupted)for(const savedPath of known.values())if(!present.has(savedPath))stats.stale++;
+ if(!stats.interrupted)stats.phase='complete';
  notify();return stats;
 }
 g.ArchiveReindex={scan,fromHtml,inspect,rebuild,syncMissing,checkMissing,safeAttachmentHref};
