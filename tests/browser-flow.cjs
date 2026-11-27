@@ -10,7 +10,7 @@ async function snapshot(dir,{messagesOnly=false}={}){
  const temp=await fs.mkdtemp(path.join(os.tmpdir(),'freedom-email-test-')),app=path.join(temp,'portable-app'),data=path.join(app,'archived_emails');
  let server;
  try{
-  await fs.mkdir(app);for(const name of ['index.html','assets','archived_emails'])await fs.cp(path.join(repo,name),path.join(app,name),{recursive:true});
+  await fs.mkdir(app);for(const name of ['index.html','GUIDE.html','assets','archived_emails'])await fs.cp(path.join(repo,name),path.join(app,name),{recursive:true});
   server=await chromium.launchServer({headless:true,...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{})});
   const browser=await chromium.connect(server.wsEndpoint()),context=await browser.newContext({offline:true}),page=await context.newPage(),errors=[];
   page.on('pageerror',e=>errors.push(e.message));await attachTestFilesystem(page,app);
@@ -37,6 +37,21 @@ async function snapshot(dir,{messagesOnly=false}={}){
   assert.equal(await page.locator('#importTab').getAttribute('aria-pressed'),'true');
   assert.equal(await page.locator('#browseTab').evaluate(el=>el.classList.contains('active')),false);
   assert.equal(await page.locator('.filters').isVisible(),false);
+  const tabCount=context.pages().length;
+  await page.click('#guideLink');await page.waitForURL(/GUIDE\.html\?from=import$/);
+  assert.equal(context.pages().length,tabCount);
+  await page.click('#guideBack');await page.waitForURL(/index\.html$/);
+  await page.waitForFunction(()=>window.ArchiveUI?.records.size===4&&!document.getElementById('import').hidden);
+  assert.equal(await page.locator('#importTab').getAttribute('aria-pressed'),'true');
+  await page.click('#browseTab');await page.fill('#query','trip');
+  await page.waitForFunction(()=>document.getElementById('rows').children.length===1);
+  await page.click('#guideLink');await page.waitForURL(/GUIDE\.html\?from=browse$/);
+  await page.click('#guideBack');await page.waitForURL(/index\.html$/);
+  await page.waitForFunction(()=>document.getElementById('query').value==='trip'&&document.getElementById('rows').children.length===1&&!document.getElementById('browse').hidden);
+  assert.equal(context.pages().length,tabCount);
+  await page.click('#reset');await page.waitForFunction(()=>document.getElementById('rows').children.length===4);
+  await page.click('#importTab');
+  console.log('PASS guide stays in the same tab and returns to Browse or Import');
   await page.locator('#files').setInputFiles(path.join(repo,'examples/example.mbox'));
   await page.click('#start');await page.waitForFunction(()=>document.getElementById('stop').hidden);
   assert.equal(await page.locator('#status').textContent(),'Import not started');assert.match(await page.locator('#operationNotice').textContent(),/Enable archive access/);

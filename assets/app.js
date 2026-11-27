@@ -8,12 +8,22 @@ const localUrl=p=>(nestedViewer?'../':'')+p;
 const returnKey='email-archive-return:'+location.pathname,imagesKey='email-archive-images:'+location.pathname;
 let remembered=null;
 try{const stored=sessionStorage.getItem(returnKey);if(stored){remembered=JSON.parse(stored);sessionStorage.removeItem(returnKey);}}catch{/* Session storage may be unavailable on file://. */}
+ // A history entry survives full-document Back navigation even when file:// storage is unavailable.
+try{if(history.state?.archiveGuideReturn)remembered=history.state.archiveGuideReturn;}catch{}
+function clearGuideReturn(){
+ try{if(history.state?.archiveGuideReturn){const next={...history.state};delete next.archiveGuideReturn;history.replaceState(next,'');}}catch{}
+}
+clearGuideReturn();
 try{const saved=sessionStorage.getItem(imagesKey);if(saved!==null)$('autoImages').checked=saved==='on';}catch{/* Default to checked. */}
 $('autoImages').addEventListener('change',()=>{try{sessionStorage.setItem(imagesKey,$('autoImages').checked?'on':'off');}catch{}render();});
-function saveReturnPosition(){
+function saveReturnPosition(section='browse',forGuide=false){
  const inputs=['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter','pageSize'];
  const values=Object.fromEntries(inputs.map(id=>[id,$(id).value]));
- try{sessionStorage.setItem(returnKey,JSON.stringify({values,page:currentPage,scrollY:window.scrollY,when:Date.now()}));}catch{}
+ const saved={values,page:currentPage,scrollY:window.scrollY,when:Date.now(),section};
+ if(forGuide){
+  try{history.replaceState({...history.state,archiveGuideReturn:saved},'');}catch{}
+ }
+ try{sessionStorage.setItem(returnKey,JSON.stringify(saved));}catch{}
 }
 function restoreReturnPosition(){
  if(!remembered)return;
@@ -24,7 +34,7 @@ function restoreReturnPosition(){
  const y=Math.max(0,Number(old.scrollY)||0);
  requestAnimationFrame(()=>window.scrollTo(0,y));
 }
-window.addEventListener('pageshow',event=>{if(event.persisted){try{sessionStorage.removeItem(returnKey);}catch{}}});
+window.addEventListener('pageshow',event=>{if(event.persisted){clearGuideReturn();try{sessionStorage.removeItem(returnKey);}catch{}}});
 // All indexed data lives beneath archived_emails/ relative to this index.html.
 function load(src){const p=chain.then(()=>loadScript(localUrl(src)));chain=p.catch(()=>{});return p;}
 function notice(s){$('operationNotice').textContent=s;$('operationNotice').hidden=!s;}
@@ -83,6 +93,7 @@ let timer;for(const id of ['query','accountFilter','labelFilter','dateFrom','dat
 function tab(which){
  $('browse').hidden=which!=='browse';
  $('import').hidden=which!=='import';
+ $('guideLink').href='GUIDE.html?from='+which;
  for(const id of ['browse','import']){
   const button=$(id+'Tab'),active=id===which;
   button.classList.toggle('active',active);
@@ -91,6 +102,15 @@ function tab(which){
 }
 $('browseTab').onclick=()=>tab('browse');
 $('importTab').onclick=()=>tab('import');
+const rememberedSection=remembered&&Number.isFinite(remembered.when)&&Date.now()-remembered.when<=30*60*1000?remembered.section:null;
+tab(rememberedSection==='import'||location.hash==='#import'?'import':'browse');
+ // The fallback hash is only used for a direct guide link, not for normal navigation.
+if(location.hash==='#import'){try{history.replaceState(history.state,'',location.pathname+location.search);}catch{}}
+$('guideLink').addEventListener('click',e=>{
+ if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){
+  saveReturnPosition($('import').hidden?'browse':'import',true);
+ }
+});
 function ready(){
  const active=busy||repairBusy||readerBusy||accessBusy;
  $('start').disabled=active||!$('files').files.length;
