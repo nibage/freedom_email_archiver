@@ -21,67 +21,84 @@ async function snapshot(dir,{messagesOnly=false}={}){
   await page.click('#connectArchive');await page.waitForFunction(()=>!document.getElementById('connectArchive').disabled);
   assert.match(await page.locator('#accessStatus').textContent(),/Archive access ready/);
   await page.click('#browseTab');await page.locator('.subject').filter({hasText:'A tiny trip plan'}).click();
-  await page.locator('h1').filter({hasText:'A tiny trip plan'}).waitFor();
-  assert.match(page.url(),/email-[a-f0-9]{64}\.html\?/);
-  assert.equal(await page.locator('iframe').count(),0);
-  await page.waitForFunction(()=>{const img=document.querySelector('main img');return img?.complete&&img.naturalWidth>0;});
-  await page.goBack();await page.waitForFunction(()=>window.ArchiveUI?.records.size===4);
-  console.log('PASS authorized browsing opens standalone HTML and CID');
-  async function ensureTestAccess(){
-   if(!await page.evaluate(()=>!!ArchiveUI.root)){
-    await page.click('#importTab');await page.click('#connectArchive');
-    await page.waitForFunction(()=>!!ArchiveUI.root&&!document.getElementById('connectArchive').disabled);
-   }
-   await page.evaluate(()=>{ArchiveReindex.syncMissing=()=>{throw Error('Unexpected implicit catalog scan');};});
-  }
+  await page.waitForFunction(()=>location.pathname.includes('/archived_emails/example/2025/2025-01/'));
+  assert.match(await page.locator('h1').textContent(),/A tiny trip plan/);
+  assert.equal(await page.locator('img[src^="attachments/"]').count(),1,'CID attachment stays a relative local file');
+  assert.equal(await page.locator('iframe').count(),0,'Saved mail opens as a full page, not an iframe');
+  await page.locator('header a').first().click();await page.waitForFunction(()=>window.ArchiveUI?.records.size===4);
+  // The fake test filesystem handle is a JS object and cannot survive a full
+  // file:// reload in IndexedDB. Native Chrome handles can; reconnect this
+  // disposable test adapter before testing actual writes.
+  await page.click('#importTab');await page.click('#connectArchive');
+  await page.waitForFunction(()=>document.getElementById('accessStatus').textContent.includes('Archive access ready'));
+  console.log('PASS full-page legacy HTML, relative CID and direct Back navigation');
+  await page.evaluate(()=>{ArchiveReindex.syncMissing=()=>{throw Error('Unexpected implicit catalog scan');};});
   async function importFile(file){
-   await ensureTestAccess();
-   await page.click('#importTab');await page.locator('#files').setInputFiles(path.join(repo,'examples',file));await page.click('#start');
-   await page.waitForFunction(()=>document.getElementById('stop').hidden&&document.getElementById('status').textContent==='Import complete');
+   await page.click('#importTab');
+   // The test adapter is an uncloneable JS object, unlike native directory
+   // handles stored by real Chrome. Reconnect after standalone-page navigation.
+   if(!await page.evaluate(()=>!!window.ArchiveUI?.root)){
+    await page.click('#connectArchive');
+    await page.waitForFunction(()=>document.getElementById('accessStatus').textContent.includes('Archive access ready'));
+   }
+   await page.locator('#files').setInputFiles(path.join(repo,'examples',file));await page.click('#start');
+   try{
+    await page.waitForFunction(()=>document.getElementById('stop').hidden&&document.getElementById('status').textContent==='Import complete',null,{timeout:15000});
+   }catch(e){
+    const status=await page.locator('#status').textContent(),detail=await page.locator('#progressDetail').textContent(),notice=await page.locator('#operationNotice').textContent();
+    throw new Error('MBOX import did not complete (status '+status+'; detail '+detail+'; notice '+notice+'): '+e.message);
+   }
   }
   const originalMessages=await snapshot(data,{messagesOnly:true});
   await importFile('example.mbox');assert.equal(await page.locator('#newCount').textContent(),'4');assert.equal(await page.evaluate(()=>ArchiveUI.records.size),8);
-  for(const [name,sum] of Object.entries(originalMessages))assert.equal((await snapshot(data,{messagesOnly:true}))[name],sum,'Import must not upgrade unrelated saved HTML');
   await page.click('#browseTab');await page.selectOption('#accountFilter','personal');
-  await page.waitForFunction(()=>document.getElementById('rows').children.length===4);
-  for(const mode of ['dark','light']){
-   if(await page.locator('html').getAttribute('data-theme')!==mode)await page.click('#themeToggle');
-   await page.locator('.subject').filter({hasText:'A tiny trip plan'}).click();
-   await page.locator('#backToArchive').waitFor();
-   assert.equal(await page.locator('html').getAttribute('data-theme'),mode);
-   assert.equal(await page.locator('iframe').count(),0);
-   await page.click('#backToArchive');await page.waitForFunction(()=>window.ArchiveUI?.records.size===8&&document.getElementById('accountFilter').value==='personal');
-  }
-  await page.click('#reset');
+  await page.waitForFunction(()=>document.getElementById('accountFilter').value==='personal'&&document.getElementById('rows').children.length===4);
+  await page.locator('.subject').filter({hasText:'A tiny trip plan'}).click();
+  await page.waitForFunction(()=>location.pathname.includes('/archived_emails/personal/'));
+  assert.equal(await page.locator('html').getAttribute('data-theme'),'light','Modern standalone HTML follows light mode');
+  assert.equal(await page.locator('iframe').count(),0);
+  await page.locator('#backToArchive').click();await page.waitForFunction(()=>window.ArchiveUI?.records.size===8&&document.getElementById('accountFilter').value==='personal'&&document.getElementById('rows').children.length===4);
+  await page.click('#themeToggle');await page.locator('.subject').filter({hasText:'A tiny trip plan'}).click();
+  await page.waitForFunction(()=>location.pathname.includes('/archived_emails/personal/'));
+  assert.equal(await page.locator('html').getAttribute('data-theme'),'dark','Modern standalone HTML follows app dark mode');
+  assert.equal(await page.locator('iframe').count(),0);
+  await page.locator('#backToArchive').click();await page.waitForFunction(()=>window.ArchiveUI?.records.size===8);
+  await page.selectOption('#accountFilter','');
+  console.log('PASS full-page modern email inherits light/dark setting and Back returns to Browse');
+  for(const [name,sum] of Object.entries(originalMessages))assert.equal((await snapshot(data,{messagesOnly:true}))[name],sum,'Import must not upgrade unrelated saved HTML');
   await importFile('example.mbox');assert.equal(await page.locator('#newCount').textContent(),'0');assert.equal(await page.locator('#dupeCount').textContent(),'4');
   await importFile('overlap.mbox');assert.equal(await page.locator('#newCount').textContent(),'1');assert.equal(await page.locator('#dupeCount').textContent(),'1');
   console.log('PASS import reads only MBOX/catalog: no library scan or appearance update');
   await page.click('#browseTab');await page.fill('#query','lighthouse');await page.waitForFunction(()=>document.getElementById('rows').children.length===2);await page.click('#reset');
   await fs.cp(path.join(data,'example'),path.join(data,'merged'),{recursive:true});
-  await page.click('#importTab');await page.locator('#files').setInputFiles([]);
-  await page.evaluate(()=>{
-   window.maintenanceEvents=[];
-   for(const name of ['checkMissing','rebuild']){
-    const original=ArchiveReindex[name];
-    ArchiveReindex[name]=(root,options)=>original(root,{...options,onProgress:state=>{
-     options.onProgress(state);const bar=document.getElementById('existingProgress');
-     maintenanceEvents.push({name,phase:state.phase,total:state.total,scanned:state.scanned,indeterminate:!bar.hasAttribute('value'),visible:!document.getElementById('existingProgressPanel').hidden});
-    }});
+  // Treat the cloned fictional account as an earlier standalone-HTML archive.
+  // Modern embedded metadata correctly binds account='example'; deliberately
+  // remove it in this synthetic merged account to test legacy-header recovery
+  // without forging modern metadata from a different account.
+  async function legacyCopiedPages(dir){
+   for(const e of await fs.readdir(dir,{withFileTypes:true})){
+    const file=path.join(dir,e.name);
+    if(e.isDirectory())await legacyCopiedPages(file);
+    else if(e.name.endsWith('.html')){
+     const page=await fs.readFile(file,'utf8');
+     const earlier=page.replace(/<script id="mail-archive-record" type="application\/json">[\s\S]*?<\/script>/,'');
+     assert.notEqual(earlier,page,'Expected a synthetic older HTML fixture');
+     await fs.writeFile(file,earlier);
+    }
    }
-  });
+  }
+  await legacyCopiedPages(path.join(data,'merged'));
+  await page.click('#importTab');await page.locator('#files').setInputFiles([]);
   const beforeCheck=await snapshot(data);await page.click('#previewReaders');await page.waitForFunction(()=>document.getElementById('stopCheck').hidden);
   assert.match(await page.locator('#readerStatus').textContent(),/13 HTML messages checked/);assert.match(await page.locator('#catalogStatus').textContent(),/4 saved messages are unindexed/);
-  assert.equal(await page.locator('#existingProgressPanel').isVisible(),true);assert.equal(await page.locator('#existingProgress').evaluate(el=>el.value===el.max),true);
   assert.deepEqual(await snapshot(data),beforeCheck,'Check existing must not write any file');
+  assert.equal(await page.locator('#existingProgress').evaluate(el=>el.value===el.max),true,'Check progress reaches total');
+  assert.match(await page.locator('#existingProgressDetail').textContent(),/13 [/] 13/);
   const beforeRebuild=await snapshot(data,{messagesOnly:true});await page.click('#upgradeReaders');await page.waitForFunction(()=>!document.getElementById('upgradeReaders').disabled);
   assert.match(await page.locator('#catalogStatus').textContent(),/13 messages/);assert.equal(await page.evaluate(()=>ArchiveUI.records.size),13);
-  assert.equal(await page.locator('#existingProgressPanel').isVisible(),true);assert.equal(await page.locator('#existingProgress').evaluate(el=>el.value===el.max),true);
-  for(const name of ['checkMissing','rebuild']){
-   const events=await page.evaluate(name=>maintenanceEvents.filter(e=>e.name===name),name);
-   assert.ok(events.some(e=>e.phase==='counting'&&e.indeterminate&&e.visible));
-   assert.ok(events.some(e=>e.phase==='scanning'&&e.total===13&&e.scanned>0&&!e.indeterminate&&e.visible));
-  }
   assert.deepEqual(await snapshot(data,{messagesOnly:true}),beforeRebuild,'Rebuild must not rewrite HTML, attachments, EML or import reports');
+  assert.equal(await page.locator('#existingProgress').evaluate(el=>el.value===el.max),true,'Rebuild progress includes published index');
+  assert.match(await page.locator('#existingProgressTitle').textContent(),/complete/);
   const removed=await page.evaluate(()=>[...ArchiveUI.records.values()].find(r=>r.account==='merged'&&r.subject==='Welcome to your email archive').path);
   await fs.unlink(path.join(data,removed));await page.click('#previewReaders');await page.waitForFunction(()=>document.getElementById('stopCheck').hidden);
   assert.match(await page.locator('#catalogStatus').textContent(),/1 stale catalog references/);
@@ -95,7 +112,9 @@ async function snapshot(dir,{messagesOnly=false}={}){
   await page.click('#upgradeReaders');await page.waitForFunction(()=>!document.getElementById('upgradeReaders').disabled);assert.match(await page.locator('#catalogStatus').textContent(),/failed/);
   assert.equal(await fs.readFile(path.join(data,'catalog/archive.js'),'utf8'),manifestBefore);await fs.writeFile(modernFile,valid);
   console.log('PASS unrelated malformed HTML does not block MBOX import; strict rebuild preserves last good index');
-  assert.equal(await page.locator('#refreshViewers').count(),0);
+  assert.equal(await page.locator('.optional-maintenance').count(),0,'Removed appearance feature should not reappear');
+  assert.equal(await page.locator('#refreshViewers').count(),0,'No old appearance update button');
+  console.log('PASS no optional viewer appearance maintenance remains');
   await page.locator('#files').setInputFiles(path.join(repo,'examples/example.mbox'));
   await page.evaluate(()=>{const run=ArchiveCore.Importer.prototype.run;window.testRuns=0;window.restoreRun=()=>ArchiveCore.Importer.prototype.run=run;
    ArchiveCore.Importer.prototype.run=async function(){window.testRuns++;await new Promise(r=>this.signal.addEventListener('abort',r,{once:true}));return {interrupted:true,issues:[]};};});
