@@ -48,6 +48,7 @@
 <p>Both actions need archive access and show a progress bar. You do not need an MBOX file or a separate check before rebuilding.</p>
 
 <h2>5. Move, merge or back up your archive</h2>
+<p>When you open the archive with saved write access, the app automatically checks account folders. If you remove a whole account, it removes that account from the main catalog without rebuilding other accounts. If you copy in a complete account with a valid index, the app can add it without reading the saved emails. Without write access, unavailable indexes are skipped; the catalog stays unchanged. Accounts with missing or ambiguous indexes need Rebuild index.</p>
 <ul>
 <li>To back up or move your archive, copy the entire application folder, including <code>index.html</code>, <code>assets/</code> and <code>archived_emails/</code>.</li>
 <li>To create a separate archive, copy the whole folder to another location.</li>

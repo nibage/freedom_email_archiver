@@ -50,6 +50,14 @@ Click a message to read it. It opens its standalone HTML in the same tab, with r
 
 The one-time operating-system permission picker **cannot safely be bypassed by a local HTML page** and is used only by **Enable archive access**, never by **Start import**, **Check existing** or **Rebuild index**. It grants access to the application directory; it is not a data-root selector. Chrome does not disclose an absolute filesystem path to the page, so the application checks the folder's name and files rather than claiming to verify the absolute path.
 
+## Automatic account synchronization
+
+On startup and when archive access is enabled, the application enumerates account directories and reconciles the main manifest. Removed accounts are dropped from the current and backup manifests under the existing exclusive writer lock. The surviving metadata/search shards and all saved HTML, attachments and EML files remain untouched. Unique message counts come from per-account index pointers or metadata, not summed shard lengths (label updates can repeat a message ID).
+
+Each account can contain `catalog/account-index.json`, a small pointer to its currently published metadata/search shards. The app creates or updates it after a successful catalog load with write access, including after imports and rebuilds. Existing archives get these pointers on the first authorized synchronization. Copied accounts with a valid pointer are checked against their metadata, search shards and saved filenames without reading message bodies. Older accounts without a pointer can be adopted only if the existing shards are unambiguous and cover exactly the saved message filenames; old overlapping or incomplete shards require an explicit rebuild. Renamed accounts are not automatically rewritten because the stored paths and embedded account IDs must remain consistent.
+
+No change means no catalog write. Without write access, the app uses an in-memory view and skips unavailable indexes. A failed or busy writer leaves reconciliation deferred; existing messages remain readable where possible. If an account folder is temporarily absent because of a sync service, its files are not deleted by the app; restoring a complete indexed folder allows it to be adopted again. Ensure synced files are available offline before writing.
+
 ## Copying, replacing or merging saved email folders
 
 To move mail without its original MBOX, make a complete backup, then copy the account directories (for example `personal/`, `work/`) **into `archived_emails/`**. You may replace the entire `archived_emails/` directory to swap to another mail library. When merging folders, preserve existing files and resolve any Windows file-copy name conflicts carefully rather than blindly overwriting them.
@@ -66,7 +74,7 @@ After copying, removing or merging account folders, use **Rebuild index** with n
 
 **Check existing** makes one read-only pass through saved HTML and validates catalog/search shards and local attachment/original references. It reports unindexed messages, stale catalog references, malformed/unreadable HTML and missing files. It does not silently repair anything or inspect the appearance version. Both Check existing and Rebuild index count saved HTML filenames and display processing progress without rewriting message files. Folder authorization is still required to enumerate local directories; the action never opens a new picker.
 
-A healthy normal MBOX import does not inspect unrelated HTML or run either maintenance operation. Its existing catalog preserves earlier indexed mail omitted from a new export. Manual filesystem changes become visible after an explicit index rebuild. Duplicate messages with older appearance are skipped too. A changed label or optional EML retention may still update that particular duplicate's metadata.
+A healthy normal MBOX import does not inspect unrelated HTML or run either maintenance operation. Its existing catalog preserves earlier indexed mail omitted from a new export. Changes inside existing accounts become visible after an explicit index rebuild; whole-account additions and removals are reconciled automatically when possible. Duplicate messages with older appearance are skipped too. A changed label or optional EML retention may still update that particular duplicate's metadata.
 
 ### Recovering saved emails without an index
 

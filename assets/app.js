@@ -1,5 +1,5 @@
 (function(){'use strict';
-const C=ArchiveCore,$=id=>document.getElementById(id);let pending=null;
+const C=ArchiveCore,$=id=>document.getElementById(id);let pending=null,catalogWarning='',catalogLoadVersion=0;
 window.MailArchive={receive:data=>{if(pending)pending(data);}};
 function loadScript(src){return new Promise((resolve,reject)=>{const s=document.createElement('script');let result;pending=x=>result=x;s.src=src;s.onload=()=>{pending=null;s.remove();result?resolve(result):reject(Error('CATALOG'));};s.onerror=()=>{pending=null;s.remove();reject(Error('CATALOG'));};document.head.append(s);});}
 let catalog,records=new Map(),all=[],matches=[],currentPage=0,queryVersion=0,root=null,controller=null,busy=false,accessBusy=false,cache=new Map(),chain=Promise.resolve();
@@ -54,11 +54,14 @@ async function loadArchiveSegment(path,selectedRoot){
  // The application never loads their catalogs by script tag or from its own folder.
  return selectedRoot?C.unwrap(await C.read(selectedRoot,path)):load('archived_emails/'+path);
 }
-async function readCatalog(){
- const selectedRoot=root,revision=selectionVersion;
- let nextCatalog,last;
+async function readCatalog({persist=true}={}){
+ const selectedRoot=root,revision=selectionVersion,loadVersion=++catalogLoadVersion;
+ let nextCatalog,last,accountSync=null;
  if(selectedRoot){
-  nextCatalog=await C.manifest(selectedRoot);
+  try{
+   accountSync=await ArchiveAccountSync.sync(selectedRoot,{write:persist&&await permissionGranted(parentHandle,'readwrite')});
+   nextCatalog=accountSync.manifest;
+  }catch{nextCatalog=await C.manifest(selectedRoot);}
   if(nextCatalog?.format!==C.VERSION)throw Error('FORMAT');
  }else{
   // Classic local script tags load indexes via file:// without File System Access.
@@ -69,14 +72,38 @@ async function readCatalog(){
   }
   if(!nextCatalog)nextCatalog=C.empty();
  }
- const found=new Map();
+ // A missing account must not prevent other accounts from opening. If any
+ // metadata shard is unavailable, hide that entire account in this view.
+ const groups=new Map(),unavailable=new Set(),usable=[];
+ let invalidSegment=false;
  for(const seg of nextCatalog.segments){
-  const m=await loadArchiveSegment(seg.meta,selectedRoot);
-  if(m.kind!=='metadata'||!Array.isArray(m.records))throw Error('CATALOG');
-  for(const r of m.records)found.set(r.account+'/'+r.id,r);
+  let account;
+  try{account=ArchiveAccountSync.segmentAccount(seg);}catch{invalidSegment=true;continue;}
+  if(unavailable.has(account))continue;
+  try{
+   const m=await loadArchiveSegment(seg.meta,selectedRoot);
+   if(m?.kind!=='metadata'||!Array.isArray(m.records)||m.records.length!==seg.count)throw Error('CATALOG');
+   if(!groups.has(account))groups.set(account,new Map());
+   for(const r of m.records){
+    if(r?.account!==account||typeof r.id!=='string'||typeof r.path!=='string'||!r.path.startsWith(account+'/')||!Array.isArray(r.labels)||!Array.isArray(r.attachments))throw Error('CATALOG');
+    groups.get(account).set(r.account+'/'+r.id,r);
+   }
+   usable.push(seg);
+  }catch{unavailable.add(account);groups.delete(account);}
  }
- if(root!==selectedRoot||revision!==selectionVersion)return;
- queryVersion++;catalog=nextCatalog;
+ if(root!==selectedRoot||revision!==selectionVersion||loadVersion!==catalogLoadVersion)return;
+ const found=new Map();
+ for(const [account,group] of groups)if(!unavailable.has(account))for(const [key,r] of group)found.set(key,r);
+ const warnings=[];
+ if(accountSync?.removed.length)warnings.push((accountSync.persisted?'Removed from catalog: ':'Missing account folders (skipped): ')+accountSync.removed.join(', ')+'.');
+ if(accountSync?.added.length)warnings.push((accountSync.persisted?'Added to catalog: ':'Available copied accounts: ')+accountSync.added.join(', ')+'.');
+ if(accountSync?.unindexed.length)warnings.push('Accounts without a complete usable index: '+accountSync.unindexed.join(', ')+'. Use Rebuild index to recover them.');
+ if(accountSync?.damaged.length)warnings.push('Some account indexes need repair: '+accountSync.damaged.join(', ')+'.');
+ if(accountSync?.deferred||accountSync?.requiresPublish&&!accountSync.persisted)warnings.push('Catalog changes are not saved yet. Enable write access or close another writer and reopen the archive.');
+ if(unavailable.size||invalidSegment)warnings.push('Unavailable account indexes'+(unavailable.size?': '+[...unavailable].sort().join(', '):'')+'. Other accounts remain available. Enable archive access to synchronize missing folders, or use Rebuild index if indexes are damaged.');
+ catalogWarning=warnings.join(' ');browseNotice(catalogWarning);
+ queryVersion++;
+ catalog={...nextCatalog,accounts:[...new Set(nextCatalog.accounts.filter(a=>!unavailable.has(a)&&groups.has(a)))].sort(),segments:usable.filter(s=>!unavailable.has(ArchiveAccountSync.segmentAccount(s))),total:found.size};
  records=found;cache.clear();
  all=[...records.values()].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||a.id.localeCompare(b.id));
  options('accountFilter',catalog.accounts,'All accounts');
@@ -99,9 +126,9 @@ async function readCatalog(){
 }
 function metadataText(r){return C.fold([r.subject,r.from,r.to,r.cc,r.bcc].join(' '));}
 async function search({page=0}={}){const v=++queryVersion;const terms=C.fold($('query').value).split(/\s+/).filter(Boolean);const acc=$('accountFilter').value,lab=$('labelFilter').value,from=$('dateFrom').value,to=$('dateTo').value,attach=$('attachmentFilter').value;const candidates=all.filter(r=>(!acc||r.account===acc)&&(!lab||r.labels.includes(lab))&&(!from||r.day&&r.day>=from)&&(!to||r.day&&r.day<=to)&&(!attach||(attach==='yes')===!!r.attachments.length));
- if(!terms.length){matches=candidates;currentPage=page;render();return true;}const wanted=new Map(),found=new Set();for(const r of candidates){const key=r.account+'/'+r.id,meta=metadataText(r);if(terms.every(t=>meta.includes(t)))found.add(key);else wanted.set(key,meta);}
- $('resultInfo').textContent='Searching local text indexes…';let done=0;for(const seg of catalog.segments){if(v!==queryVersion)return;if(!seg.search)continue;let data=cache.get(seg.search);if(!data){data=await loadArchiveSegment(seg.search,root);cache.set(seg.search,data);if(cache.size>4)cache.delete(cache.keys().next().value);}for(const x of data.records){const meta=wanted.get(x.key);if(meta!==undefined){const hay=meta+' '+C.fold(x.text);if(terms.every(t=>hay.includes(t)))found.add(x.key);}}done++;if(done%5===0){$('resultInfo').textContent='Searched '+done+' indexes…';await new Promise(r=>setTimeout(r,0));}}
- if(v!==queryVersion)return false;matches=candidates.filter(r=>found.has(r.account+'/'+r.id));currentPage=page;render();return true;}
+ if(!terms.length){matches=candidates;currentPage=page;render();browseNotice(catalogWarning);return true;}const wanted=new Map(),found=new Set();for(const r of candidates){const key=r.account+'/'+r.id,meta=metadataText(r);if(terms.every(t=>meta.includes(t)))found.add(key);else wanted.set(key,meta);}
+ $('resultInfo').textContent='Searching local text indexes…';let done=0;const unavailableSearch=new Set();for(const seg of catalog.segments){if(v!==queryVersion)return false;if(!seg.search)continue;let data=cache.get(seg.search);if(!data){try{data=await loadArchiveSegment(seg.search,root);if(data?.kind!=='search'||!Array.isArray(data.records)||data.records.some(x=>typeof x?.key!=='string'||typeof x.text!=='string'))throw Error('CATALOG');cache.set(seg.search,data);if(cache.size>4)cache.delete(cache.keys().next().value);}catch{unavailableSearch.add(ArchiveAccountSync.segmentAccount(seg));continue;}}for(const x of data.records){const meta=wanted.get(x.key);if(meta!==undefined){const hay=meta+' '+C.fold(x.text);if(terms.every(t=>hay.includes(t)))found.add(x.key);}}done++;if(done%5===0){$('resultInfo').textContent='Searched '+done+' indexes…';await new Promise(r=>setTimeout(r,0));}}
+ if(v!==queryVersion)return false;matches=candidates.filter(r=>found.has(r.account+'/'+r.id));currentPage=page;render();browseNotice([catalogWarning,unavailableSearch.size?'Full-text search is incomplete for '+[...unavailableSearch].sort().join(', ')+'. Use Rebuild index to repair missing search indexes.':''].filter(Boolean).join(' '));return true;}
 function render(){const size=+$('pageSize').value,pages=Math.max(1,Math.ceil(matches.length/size));currentPage=Math.min(currentPage,pages-1);$('rows').replaceChildren();for(const r of matches.slice(currentPage*size,(currentPage+1)*size)){const tr=document.createElement('tr');const tdDate=document.createElement('td');tdDate.className='date';tdDate.textContent=r.date?new Date(r.date).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Unknown date';const tdAddr=document.createElement('td');tdAddr.textContent=r.from||'(Not specified)';const to=document.createElement('span');to.className='address';to.textContent='To: '+(r.to||'—');tdAddr.append(to);const tdSub=document.createElement('td');const a=document.createElement('a');a.className='subject';a.textContent=r.subject||'(No subject)';a.href='archived_emails/'+r.path.split('/').map(encodeURIComponent).join('/')+'?fromArchive=1&images='+($('autoImages').checked?'auto':'manual')+'&theme='+(document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light');a.target='_self';a.addEventListener('click',e=>{
  if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey)saveReturnPosition();
 });tdSub.append(a);for(const text of [r.account,...r.labels]){const s=document.createElement('span');s.className='badge';s.textContent=text;tdSub.append(s);}const tdAtt=document.createElement('td');tdAtt.textContent=(r.attachments.length?'⌕ '+r.attachments.length:'—')+(r.original?' · EML':'');tr.append(tdDate,tdAddr,tdSub,tdAtt);$('rows').append(tr);}$('empty').hidden=!!matches.length;$('resultInfo').textContent=matches.length.toLocaleString('en-GB')+' messages'+(matches.length!==all.length?' of '+all.length.toLocaleString('en-GB'):'');for(const suffix of ['', 'Top']){$('pageInfo'+suffix).textContent=(currentPage+1)+' / '+pages;$('prev'+suffix).disabled=currentPage===0;$('next'+suffix).disabled=currentPage>=pages-1;}}
@@ -185,13 +212,10 @@ $('importAccount').addEventListener('change',()=>{
 });
 async function loadRootAccounts(handle){
  const version=selectionVersion,names=new Set();
- for(const a of catalog?.accounts||[]){try{names.add(C.accountName(a));}catch{}}
  if(handle){
-  const m=await C.manifest(handle);
-  for(const a of m.accounts||[]){try{names.add(C.accountName(a));}catch{}}
   for await(const [name,entry] of handle.entries())
    if(entry.kind==='directory')try{names.add(C.accountName(name));}catch{}
- }
+ }else for(const a of catalog?.accounts||[]){try{names.add(C.accountName(a));}catch{}}
  if(version!==selectionVersion||handle!==root)return;
  const select=$('importAccountSelect'),prior=select.value,sorted=[...names].sort();
  select.replaceChildren(...sorted.map(a=>new Option(a,a)),new Option('+ New account…','__new__'));
@@ -226,12 +250,12 @@ function setAccessStatus(message,kind=''){
  prefix.textContent=kind==='ready'?'Archive access ready:':'Archive access not enabled:';
  status.replaceChildren(prefix,document.createTextNode(' '+message));
 }
-async function bindParent(parent,{create=false}={}){
+async function bindParent(parent,{create=false,syncWrite=true}={}){
  await validateAppParent(parent);
  const data=await parent.getDirectoryHandle('archived_emails',{create});
  parentHandle=parent;recentParent=parent;root=data;selectionVersion++;
  await dbPut(folderPreference,parent);
- try{await readCatalog();}
+ try{await readCatalog({persist:syncWrite});}
  catch(e){browseNotice('The current archive index needs repair: '+errorText(e));}
  await loadRootAccounts(data);
  const canWrite=await permissionGranted(parent,'readwrite');
@@ -246,7 +270,7 @@ async function ensureArchive({write=false}={}){
  if(!parent||!await permissionGranted(parent,write?'readwrite':'read'))
   throw Error('ARCHIVE_ACCESS_REQUIRED');
  if(root&&parent===parentHandle)return root;
- return bindParent(parent,{create:false});
+ return bindParent(parent,{create:false,syncWrite:false});
 }
 $('connectArchive').onclick=async()=>{
  if(busy||repairBusy||readerBusy||accessBusy)return;
@@ -289,9 +313,11 @@ async function loadRecent(){
    let permitted=false;
    try{permitted=typeof handle.queryPermission!=='function'||
      await handle.queryPermission({mode:'read'})==='granted';}catch{}
-   if(permitted&&!root){
+   if(permitted&&!root&&!accessBusy&&!busy&&!repairBusy&&!readerBusy){
+    accessBusy=true;ready();
     try{await bindParent(handle);if(await permissionGranted(handle,'readwrite'))$('connectArchive').textContent='Renew archive access';}
     catch{/* No permission prompt and no automatic creation. */}
+    finally{accessBusy=false;ready();}
    }
   }
  }catch{/* Browser profile storage may be disabled for file:// */}
@@ -319,6 +345,8 @@ $('start').onclick=async()=>{
  $('stop').hidden=false;ready();
  try{
   target=await ensureArchive({write:true});
+  const reconciled=await ArchiveAccountSync.sync(target,{write:true});
+  if(reconciled.requiresPublish&&!reconciled.persisted||reconciled.damaged.length)throw Error(reconciled.error||'CATALOG');
   acc=selectedAccount();
   preferredAccount=acc;void rememberAccount(acc);
   if(controller.signal.aborted){$('status').textContent='Import stopped';return;}

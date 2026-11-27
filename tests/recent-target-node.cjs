@@ -64,7 +64,7 @@ const ArchiveReindex={
  async rebuild(root,{onProgress}){assert.equal(root,data);calls.push('rebuild');const r={phase:'complete',total:1,scanned:1,indexed:1,errors:0,brokenAttachments:0,missingOriginals:0,committed:true,interrupted:false};onProgress(r);return r;}
 };
 vm.runInNewContext(src,{window,document,showDirectoryPicker:window.showDirectoryPicker,indexedDB,
- ArchiveCore:C,ArchiveReindex,
+ ArchiveCore:C,ArchiveReindex,ArchiveAccountSync:{segmentAccount:seg=>seg.meta.split('/')[0],sync:async()=>({manifest,removed:[],added:[],unindexed:[],damaged:[],requiresPublish:false})},
  location:{pathname:'/test/freedom_email_archiver/index.html'},
  Option:function Option(text,value){return {text,value};},sessionStorage:{getItem(){return null;},setItem(){},removeItem(){}},
  AbortController,setTimeout,clearTimeout,requestAnimationFrame:fn=>fn(),console},{filename:'assets/app.js'});

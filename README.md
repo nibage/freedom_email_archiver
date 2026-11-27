@@ -29,7 +29,7 @@ Your email contains years of memories, documents and information. Keep a copy th
 | **Incremental imports** | Add new MBOX exports without duplicating existing messages. Gmail labels are merged. |
 | **Readable files** | Each message is a standalone HTML file with its own local attachments. |
 | **Multiple accounts** | Keep personal, work and other email archives together, or in separate portable folders. |
-| **Recoverable indexes** | Check saved files or rebuild searchable indexes without an MBOX. |
+| **Recoverable indexes** | Removed accounts disappear automatically with archive access; copy complete indexed accounts or rebuild damaged indexes without an MBOX. |
 | **Light & dark mode** | A compact, comfortable reading interface with remembered browsing position. |
 | **Optional EML copies** | Preserve selected signed, encrypted, starred or important messages in original-message format. |
 
