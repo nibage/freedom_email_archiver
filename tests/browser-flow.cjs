@@ -34,7 +34,14 @@ async function snapshot(dir,{messagesOnly=false}={}){
   console.log('PASS full-page legacy HTML, relative CID and direct Back navigation');
   await page.evaluate(()=>{ArchiveReindex.syncMissing=()=>{throw Error('Unexpected implicit catalog scan');};});
   async function importFile(file){
-   await page.click('#importTab');await page.locator('#files').setInputFiles(path.join(repo,'examples',file));await page.click('#start');
+   await page.click('#importTab');
+   // The test adapter is an uncloneable JS object, unlike native directory
+   // handles stored by real Chrome. Reconnect after standalone-page navigation.
+   if(!await page.evaluate(()=>!!window.ArchiveUI?.root)){
+    await page.click('#connectArchive');
+    await page.waitForFunction(()=>document.getElementById('accessStatus').textContent.includes('Archive access ready'));
+   }
+   await page.locator('#files').setInputFiles(path.join(repo,'examples',file));await page.click('#start');
    try{
     await page.waitForFunction(()=>document.getElementById('stop').hidden&&document.getElementById('status').textContent==='Import complete',null,{timeout:15000});
    }catch(e){
