@@ -90,14 +90,22 @@ Safe recovery test: copy the full archive, rename **both** `__email_archiver/ass
 
 The redundant Browse intro is removed; Import is centered, with the root selector before the email account, a short folder name beside it, inline EML checkboxes and a separate Safe incremental import section below the repair panel. Light-mode accents are deep burgundy rather than bright brick red. Newly rendered standalone email pages style their navigation/header using the viewer's theme parameter, preserve a white email-body canvas, and use a CSP-pinned script hash. The renderer version is bumped so reimporting a source MBOX can regenerate older saved HTML pages; existing HTML is **not silently edited**. Source checks cover these choices, but actual Chrome/Edge display still needs a manual visual pass.
 
-## Existing-only actions and pre-MBOX existing refresh
+## Current: standalone email pages and counted index progress (November 2026)
+
+**Current behavior:** All saved emails open as full-page HTML documents with a Back link; no fixed-height embedded email iframe or extra scroll container. Current generated message shells receive `theme=light|dark` and the external-image preference from the archive link, retaining their pinned CSP and original safe formatting.
+
+**Check existing** and **Rebuild index** first count HTML file handles under `archived_emails/` without opening message contents, then display a processed/total progress bar. Rebuild has an additional final publication step and remains cancellable. Neither action updates saved message appearance; the former is entirely read-only, and the latter only writes catalog/search shards. The removed Optional appearance maintenance action, source module, and tests are no longer part of the application.
+
+The following earlier verification notes record historical iterations only and no longer describe the current workflow.
+
+## Historical: existing-only actions and pre-MBOX refresh (superseded)
 
 The existing-email controls are aligned to the right of Start import. **Check existing** displays its counts directly below the action row; **Reimport only existing** updates only known old HTML reader shells using a separate progress bar/counters and completion text. **Start import** runs this existing-HTML stage before touching the selected MBOX, then shows the MBOX progress separately. Unknown HTML formats are skipped. A cancelled or errored existing stage prevents the MBOX stage. Healthy catalog checks show only an inline status, not an extra progress card. These workflow checks are exercised in `tests/recent-target-node.cjs` and `tests/reader-node.cjs` but real Chrome/Edge testing remains necessary.
 
-## Existing-only and Start import hanging at zero counters
+## Historical: Existing-only and Start import hanging at zero counters (superseded)
 
 Previously, Start import exposed the existing-email progress card **before** silently copying the entire application to the destination, so synced folders could show the default indeterminate bar and zero counters for a long time. The sequence is now HTML-only existing update → visible changed-file viewer preparation → MBOX import. The standalone existing-only action counts file handles and reports counting/lock/reading/writing phases immediately. An unresolved exclusive file-system lock can be cancelled and has a bounded wait with safe late-writer cleanup. Existing HTML and mail contents remain unchanged unless their recognized reader shells are explicitly eligible for update. Regression tests simulate a permanently pending lock, cancellation and the correct ordering. Real Chrome/Edge with backed-up synced-folder archives still needs manual testing.
 
-## Read-only root selection, new root launcher, and efficient existing-only checks
+## Historical: Root selection, launcher, and existing-only checks (superseded)
 
 Selecting a destination checks only root-level viewer/manifest entry files and does not scan the account/year/month hierarchy or acquire any write lock. The longer **Check existing** scan is read-only and reports missing catalog references; intentional **Start import** and **Reimport only existing** actions recover missing catalog entries. The explicit Create archive action installs the local viewer in `__email_archiver/` and a root `index.html` offline launcher containing a working relative link. Unknown existing root HTML must not be overwritten. The source tab cannot construct an absolute `file://` target URL from a directory handle. The existing-reader updater now scans once, reads each file once, uses a fast path for current reader versions, and acquires the writer lock only for eligible old pages. Simulated tests verify no writes on folder selection or when no reader update is necessary, the root launcher, and read-only catalog checks. Windows Defender behavior and real Windows/pCloud file picker UX remain manual validation items.
