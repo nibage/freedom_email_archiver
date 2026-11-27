@@ -25,7 +25,7 @@ async function main(){
  const temp=await fs.mkdtemp(path.join(os.tmpdir(),'freedom-email-screenshots-'));
  let browser;
  try{
-  for(const name of ['index.html','GUIDE.html','assets','archived_emails'])await fs.cp(path.join(root,name),path.join(temp,name),{recursive:true});
+  for(const name of ['index.html','assets','archived_emails'])await fs.cp(path.join(root,name),path.join(temp,name),{recursive:true});
   await fs.mkdir(output,{recursive:true});
   browser=await chromium.launch({headless:true,...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{})});
   const context=await browser.newContext({offline:true,viewport:{width:1440,height:820},deviceScaleFactor:1,locale:'en-GB',timezoneId:'UTC'});

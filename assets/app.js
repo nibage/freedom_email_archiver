@@ -18,11 +18,11 @@ try{
 }catch{/* Session storage may be unavailable on file://. */}
 // Browser Back can restore the exact archive history entry without sessionStorage.
 // Keep this snapshot for as long as that history entry exists.
-try{const saved=history.state?.archiveReturn||history.state?.archiveGuideReturn;if(saved?.values)remembered=saved;}catch{}
+try{const saved=history.state?.archiveReturn;if(saved?.values)remembered=saved;}catch{}
 function clearArchiveReturn(){
  try{
-  if(history.state?.archiveReturn||history.state?.archiveGuideReturn){
-   const next={...history.state};delete next.archiveReturn;delete next.archiveGuideReturn;history.replaceState(next,'');
+  if(history.state?.archiveReturn){
+   const next={...history.state};delete next.archiveReturn;history.replaceState(next,'');
   }
  }catch{}
 }
@@ -33,7 +33,7 @@ function saveReturnPosition(section='browse'){
  const inputs=['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter','pageSize'];
  const values=Object.fromEntries(inputs.map(id=>[id,$(id).value]));
  const saved={values,page:currentPage,scrollY:window.scrollY,when:Date.now(),section};
- // Save for both email and guide navigation; session storage also supports old direct Back links.
+ // Save email navigation; session storage also supports old direct Back links.
  try{history.replaceState({...history.state,archiveReturn:saved},'');}catch{}
  try{sessionStorage.setItem(returnKey,JSON.stringify(saved));}catch{}
 }
@@ -163,7 +163,6 @@ let timer;for(const id of ['query','accountFilter','labelFilter','dateFrom','dat
 function tab(which){
  $('browse').hidden=which!=='browse';
  $('import').hidden=which!=='import';
- $('guideLink').href='GUIDE.html?from='+which;
  for(const id of ['browse','import']){
   const button=$(id+'Tab'),active=id===which;
   button.classList.toggle('active',active);
@@ -172,15 +171,7 @@ function tab(which){
 }
 $('browseTab').onclick=()=>tab('browse');
 $('importTab').onclick=()=>tab('import');
-const rememberedSection=remembered?.section;
-tab(rememberedSection==='import'||location.hash==='#import'?'import':'browse');
- // The fallback hash is only used for a direct guide link, not for normal navigation.
-if(location.hash==='#import'){try{history.replaceState(history.state,'',location.pathname+location.search);}catch{}}
-$('guideLink').addEventListener('click',e=>{
- if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){
-  saveReturnPosition($('import').hidden?'browse':'import');
- }
-});
+tab('browse');
 function ready(){
  const active=busy||repairBusy||readerBusy||accessBusy;
  $('start').disabled=active||!$('files').files.length;

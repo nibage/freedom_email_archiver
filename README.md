@@ -12,7 +12,7 @@ A private, portable, searchable email archive that runs right in your browser.
 [![Offline](https://img.shields.io/badge/works-offline-6c2943)](#why-freedom-email-archiver)
 [![Tests](https://github.com/nibage/freedom_email_archiver/actions/workflows/archive-tests.yml/badge.svg)](https://github.com/nibage/freedom_email_archiver/actions/workflows/archive-tests.yml)
 
-[Download ZIP](https://github.com/nibage/freedom_email_archiver/archive/refs/heads/main.zip) · [Quick start](#quick-start) · [User guide](GUIDE.html) · [Technical details](docs/TECHNICAL.md)
+[Download ZIP](https://github.com/nibage/freedom_email_archiver/archive/refs/heads/main.zip) · [Quick start](#quick-start) · [User guide](#user-guide) · [Technical details](docs/TECHNICAL.md)
 
 </div>
 
@@ -68,7 +68,9 @@ No installation or account is required.
 
 > **Keep private mail private:** use a personal copy outside any Git repository you publish. The included examples are fictional; your real messages, attachments and indexes must never be published.
 
-### How to use the archive
+## User guide
+
+### Everyday tasks
 
 | I want to… | What to do |
 | --- | --- |
@@ -76,17 +78,46 @@ No installation or account is required.
 | Add more email | Import another MBOX. Existing messages are not removed when absent from the new export. |
 | Check saved files | Import → Enable archive access → **Check existing**. This is read-only. |
 | Restore a missing index | Import → **Rebuild index**. No MBOX is needed. |
-| Move or merge account folders | Back up first, copy the folders into `archived_emails/`, then rebuild the index. |
+| Move or merge account folders | Back up first; complete indexed accounts can be adopted automatically. Rebuild only if indexes are missing, ambiguous or files inside an account changed. |
 | Back up the entire archive | Copy the complete application folder, including its data. |
 
-Open **Guide and limitations** in the application for the full [user guide](GUIDE.html).
+### Browse and search
+
+Open `index.html` and choose **Browse archive**. Search by subject, address or message text and combine the account, Gmail label, date and attachment filters. Click an email to open its standalone HTML page. **Back to archive** or your browser's Back button restores your browsing position. Switch between light and dark mode in the header; older saved messages may retain their original appearance.
+
+No folder permission is required for reading or searching an indexed archive. Remote email images can contact the sender's servers; disable **Load external images automatically** if you prefer.
+
+### Import MBOX files
+
+1. Open **Import** in desktop Chrome or Edge.
+2. Click **Enable archive access** and select the application folder containing `index.html`, not `archived_emails/` or the MBOX file.
+3. Select one or more MBOX files, then select an account or choose **+ New account…**.
+4. Optionally retain EML copies for signed/encrypted, Gmail Starred or Gmail Important messages.
+5. Click **Start import**, keep the tab open until it finishes, then return to Browse.
+
+Import adds messages, skips duplicates and merges Gmail labels. Messages absent from a newer MBOX are not deleted. The source MBOX is unchanged; unrelated saved emails are not scanned or rewritten. Folder permission is remembered where the browser supports it; if it expires, use **Enable archive access** or **Renew archive access** again. Import, Check existing and Rebuild index never open a folder picker themselves.
+
+### Check existing and Rebuild index
+
+**Check existing** is read-only. It checks saved messages, attachments, EML copies and indexes for missing or damaged files.
+
+**Rebuild index** reconstructs the searchable indexes from saved HTML, without changing emails, attachments or EML copies. Use it when an index is damaged or missing, or after manual changes to individual files inside an account. If rebuilding fails or is stopped before publication, the previous index is retained. Both actions show progress, require archive access, and do not require an MBOX or a preliminary check.
+
+### Move, merge, delete or back up accounts
+
+- **Move or rename the entire application folder:** keep `index.html`, `assets/` and `archived_emails/` together. All index paths are relative. Browsing and searching work at the new location without rebuilding. If necessary, renew folder access for writes.
+- **Delete a whole account:** with write access, opening the app synchronizes the main and backup catalogs without rebuilding other accounts. Without write access, unavailable account indexes are skipped.
+- **Copy or merge accounts:** back up first and preserve year/month, attachment, EML and catalog subfolders. A complete account with a valid index can be adopted automatically; missing or ambiguous indexes require Rebuild index. Resolve conflicts carefully; do not overwrite existing files blindly.
+- **Recover emails without an index:** back up the saved files, copy account folders into `archived_emails/` and choose Rebuild index.
+- **Create a separate archive or backup:** copy the entire application folder. Keep all synced files available offline, wait for synchronization to finish and never write to the same archive from multiple computers simultaneously.
+
+The **GitHub** link in the application header opens this repository and its documentation in a separate tab. All archive functionality remains offline; only visiting the repository requires internet access.
 
 ## One portable archive
 
 ```text
 freedom_email_archiver/
 ├── index.html              Open this
-├── GUIDE.html              Offline user guide
 ├── assets/                 Application and styling
 └── archived_emails/        Your mail, attachments and indexes
     ├── catalog/
@@ -106,12 +137,13 @@ The public repository also includes `docs/`, `tests/` and `scripts/` for documen
 - Use desktop Chrome or Edge for folder access, imports and index maintenance. Other browsers have not been fully verified.
 - The per-message limit is 64 MiB. Keep original MBOX exports for exact source preservation and signature verification.
 - The archive is not encrypted. Protect private files and backups, and run only one write operation at a time, especially with synced folders.
+- Oversized or damaged messages are reported as errors. Windows Defender warnings cannot be disabled by the application; review Windows Security → Protection history if a warning appears.
 
 ## Documentation & development
 
 | Resource | Purpose |
 | --- | --- |
-| [Offline user guide](GUIDE.html) | Step-by-step browsing, importing, recovery and backup |
+| [User guide](#user-guide) | Step-by-step browsing, importing, recovery and backup |
 | [Technical details](docs/TECHNICAL.md) | Architecture, indexes, duplicate handling, locking and EML preservation |
 | [Testing and verification](tests/VERIFICATION.md) | How to run the automated checks and refresh screenshots |
 | [Security](SECURITY.md) | Safe handling of private email and reporting issues |

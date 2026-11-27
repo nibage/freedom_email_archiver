@@ -10,7 +10,7 @@ async function snapshot(dir,{messagesOnly=false}={}){
  const temp=await fs.mkdtemp(path.join(os.tmpdir(),'freedom-email-test-')),app=path.join(temp,'portable-app'),data=path.join(app,'archived_emails');
  let server;
  try{
-  await fs.mkdir(app);for(const name of ['index.html','GUIDE.html','assets','archived_emails'])await fs.cp(path.join(repo,name),path.join(app,name),{recursive:true});
+  await fs.mkdir(app);for(const name of ['index.html','assets','archived_emails'])await fs.cp(path.join(repo,name),path.join(app,name),{recursive:true});
   const indexFile=path.join(app,'index.html');
   const indexHtml=await fs.readFile(indexFile,'utf8');
   // Small test-only page size survives navigation/reload like the real 50/100/200 options.
@@ -82,25 +82,27 @@ async function snapshot(dir,{messagesOnly=false}={}){
   assert.equal(await page.locator('#browseTab').evaluate(el=>el.classList.contains('active')),false);
   assert.equal(await page.locator('.filters').isVisible(),false);
   assert.equal(await page.locator('#accessStatus .access-error').textContent(),'Archive access not enabled:');
-  const tabCount=context.pages().length;
-  assert.equal(await page.locator('#import .import-guide').count(),0,'Portable archive instructions belong in the guide');
-  await page.click('#guideLink');await page.waitForURL(/GUIDE\.html\?from=import$/);
-  assert.equal(await page.getByRole('heading',{name:'1. One portable archive'}).count(),1);
-  assert.match(await page.locator('body').textContent(),/64 MiB per message/);
-  assert.match(await page.locator('body').textContent(),/keep the tab open/i);
-  assert.equal(context.pages().length,tabCount);
-  await page.click('#guideBack');await page.waitForURL(/index\.html$/);
-  await page.waitForFunction(()=>window.ArchiveUI?.records.size===4&&!document.getElementById('import').hidden);
+  assert.equal(await page.locator('#import .import-guide').count(),0,'Portable archive instructions belong in the README');
+  const github=page.locator('#githubLink');
+  assert.equal(await github.textContent(),'GitHub');
+  assert.equal(await github.getAttribute('href'),'https://github.com/nibage/freedom_email_archiver');
+  assert.equal(await github.getAttribute('target'),'_blank');
+  assert.match(await github.getAttribute('rel'),/\bnoopener\b/);
+  assert.match(await github.getAttribute('rel'),/\bnoreferrer\b/);
+  assert.equal(await page.locator('#guideLink').count(),0);
+  // Intercept the external navigation with a local synthetic response.
+  // Never access GitHub or transmit archive data during the offline test.
+  await context.route('https://github.com/nibage/freedom_email_archiver',route=>route.fulfill({contentType:'text/html',body:'<title>Project documentation</title>'}));
+  const popupPromise=page.waitForEvent('popup');await github.click();const popup=await popupPromise;
+  await popup.waitForURL('https://github.com/nibage/freedom_email_archiver');await popup.close();
   assert.equal(await page.locator('#importTab').getAttribute('aria-pressed'),'true');
   await page.click('#browseTab');await page.fill('#query','trip');
   await page.waitForFunction(()=>document.getElementById('rows').children.length===1);
-  await page.click('#guideLink');await page.waitForURL(/GUIDE\.html\?from=browse$/);
-  await page.click('#guideBack');await page.waitForURL(/index\.html$/);
-  await page.waitForFunction(()=>document.getElementById('query').value==='trip'&&document.getElementById('rows').children.length===1&&!document.getElementById('browse').hidden);
-  assert.equal(context.pages().length,tabCount);
+  const browsePopup=page.waitForEvent('popup');await github.click();await (await browsePopup).close();
+  assert.equal(await page.locator('#query').inputValue(),'trip');
   await page.click('#reset');await page.waitForFunction(()=>document.getElementById('rows').children.length===4);
   await page.click('#importTab');
-  console.log('PASS guide stays in the same tab and returns to Browse or Import');
+  console.log('PASS GitHub link opens separately and keeps archive state intact');
   await page.locator('#files').setInputFiles(path.join(repo,'tests/fixtures/example.mbox'));
   await page.click('#start');await page.waitForFunction(()=>document.getElementById('stop').hidden);
   assert.equal(await page.locator('#status').textContent(),'Import not started');assert.match(await page.locator('#operationNotice').textContent(),/Enable archive access/);

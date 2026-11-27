@@ -157,13 +157,13 @@ footer{justify-content:flex-end}
  font:bold 21px/1 Georgia,serif;background:var(--mark-bg);color:var(--mark-ink)}
 .brand h1{font-size:17px;line-height:1.2;margin:0}
 #activeRootInfo{font-size:12px;color:var(--header-muted);text-align:center;overflow-wrap:anywhere}
-.header-tab,.header-guide,.top .theme-toggle{
+.header-tab,.header-github,.top .theme-toggle{
  display:inline-flex;align-items:center;justify-content:center;gap:5px;
  padding:6px 10px;min-height:32px;border:1px solid var(--theme-border);border-radius:6px;
  color:var(--theme-ink);background:var(--theme-bg);font-size:12px;font-weight:600;
  line-height:1.4;white-space:nowrap;text-decoration:none;
 }
-.header-tab:hover,.header-guide:hover,.top .theme-toggle:hover{
+.header-tab:hover,.header-github:hover,.top .theme-toggle:hover{
  color:var(--theme-ink);background:var(--theme-hover);border-color:var(--theme-ink)
 }
 .header-tab.active,.header-tab.active:hover{

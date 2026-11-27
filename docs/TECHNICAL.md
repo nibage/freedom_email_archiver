@@ -1,15 +1,14 @@
 # Technical details
 
-[Back to README](../README.md) · [Offline user guide](../GUIDE.html)
+[Back to README](../README.md) · [User guide](../README.md#user-guide)
 
-This document describes how the portable application stores, reads and maintains archived email. The user-facing quick start is in the README and Guide.
+This document describes how the portable application stores, reads and maintains archived email. The user-facing quick start and guide are in the README.
 
 ## Directory structure
 
 ```text
 freedom_email_archiver/
 ├── index.html                 ← Double-click this to read
-├── GUIDE.html
 ├── assets/                    ← Application code, styles, icons
 └── archived_emails/           ← All authoritative mail data
     ├── catalog/

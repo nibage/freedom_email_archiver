@@ -1,4 +1,4 @@
-const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');const root=path.resolve(__dirname,'..');const allowed=new Set(['.git','.github','.gitignore','README.md','GUIDE.html','LICENSE','SECURITY.md','THIRD_PARTY_NOTICES.md','index.html','assets','archived_emails','docs','scripts','tests']);for(const name of fs.readdirSync(root))assert(allowed.has(name),'Unexpected root content: '+name);
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');const root=path.resolve(__dirname,'..');const allowed=new Set(['.git','.github','.gitignore','README.md','LICENSE','SECURITY.md','THIRD_PARTY_NOTICES.md','index.html','assets','archived_emails','docs','scripts','tests']);for(const name of fs.readdirSync(root))assert(allowed.has(name),'Unexpected root content: '+name);
 assert.deepEqual(fs.readdirSync(path.join(root,'archived_emails')).sort(),['catalog','example'],
  'Only the fictional example account and demo catalog may be committed under archived_emails/.');
 assert(!fs.existsSync(path.join(root,'example')),'Fictional account must not remain outside archived_emails/.');

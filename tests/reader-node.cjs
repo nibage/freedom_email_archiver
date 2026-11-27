@@ -22,7 +22,7 @@ const sourceIndex=fs.readFileSync(path.join(root,'index.html'),'utf8');
 const app=fs.readFileSync(path.join(root,'assets/app.js'),'utf8');
 const styles=fs.readFileSync(path.join(root,'assets/style.css'),'utf8');
 assert(sourceIndex.indexOf('id="notice"')<sourceIndex.indexOf('id="import"'),'Notices must appear above import panels.');
-assert(sourceIndex.indexOf('class="importgrid"')<sourceIndex.indexOf('id="progressPanel"')&&!sourceIndex.includes('class="panel import-guide"'),'Import progress follows the form; instructions belong in the guide.');
+assert(sourceIndex.indexOf('class="importgrid"')<sourceIndex.indexOf('id="progressPanel"')&&!sourceIndex.includes('class="panel import-guide"'),'Import progress follows the form; instructions belong in the README.');
 assert(sourceIndex.includes('id="existingProgress"'),'Check existing and index rebuild must expose visible progress.');
 assert(sourceIndex.includes('id="catalogStatus"')&&sourceIndex.includes('id="readerStatus"'),'Catalog and Check existing status must live under the action row.');
 assert(sourceIndex.indexOf('id="existingProgressPanel"')<sourceIndex.indexOf('id="progressPanel"'),'Index progress must precede new MBOX progress.');
