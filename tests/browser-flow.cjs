@@ -11,6 +11,10 @@ async function snapshot(dir,{messagesOnly=false}={}){
  let server;
  try{
   await fs.mkdir(app);for(const name of ['index.html','GUIDE.html','assets','archived_emails'])await fs.cp(path.join(repo,name),path.join(app,name),{recursive:true});
+  const indexFile=path.join(app,'index.html');
+  const indexHtml=await fs.readFile(indexFile,'utf8');
+  // Small test-only page size survives navigation/reload like the real 50/100/200 options.
+  await fs.writeFile(indexFile,indexHtml.replace('<select id="pageSize">','<select id="pageSize"><option value="2">2</option>').replace('<option>50</option>','<option selected>50</option>'));
   server=await chromium.launchServer({headless:true,...(process.env.CHROME_PATH?{executablePath:process.env.CHROME_PATH}:{})});
   const browser=await chromium.connect(server.wsEndpoint()),context=await browser.newContext({offline:true}),page=await context.newPage(),errors=[];
   page.on('pageerror',e=>errors.push(e.message));await attachTestFilesystem(page,app);
@@ -27,7 +31,7 @@ async function snapshot(dir,{messagesOnly=false}={}){
   await page.evaluate(()=>window.scrollTo(0,100));
   await page.waitForFunction(()=>window.scrollY>=60&&Math.abs(document.querySelector('.filters').getBoundingClientRect().top)<2);
   await page.evaluate(()=>window.scrollTo(0,0));
-  await page.evaluate(()=>{const s=document.getElementById('pageSize');s.add(new Option('2','2'));s.value='2';s.dispatchEvent(new Event('change'));});
+  await page.evaluate(()=>{const s=document.getElementById('pageSize');s.value='2';s.dispatchEvent(new Event('change'));});
   await page.locator('#next').scrollIntoViewIfNeeded();
   assert.ok(await page.evaluate(()=>window.scrollY>0));
   await page.click('#next');await page.waitForFunction(()=>window.scrollY===0&&document.getElementById('pageInfo').textContent==='2 / 2');
@@ -41,6 +45,18 @@ async function snapshot(dir,{messagesOnly=false}={}){
   assert.equal(await page.locator('#next').isDisabled(),true);
   await page.click('#prevTop');
   await page.waitForFunction(()=>document.getElementById('pageInfo').textContent==='1 / 2');
+  // Old saved messages use a normal href back to index.html.
+  await page.click('#nextTop');
+  await page.waitForFunction(()=>document.getElementById('pageInfo').textContent==='2 / 2');
+  const legacyPage2=await page.locator('.subject').allTextContents();
+  await page.locator('.subject').first().click();
+  await page.waitForURL(/archived_emails\/example\/.*\.html\?/);
+  await page.locator('header a').first().click();
+  await page.waitForFunction(()=>document.getElementById('pageInfo')?.textContent==='2 / 2');
+  assert.deepEqual(await page.locator('.subject').allTextContents(),legacyPage2);
+  assert.equal(await page.locator('#pageSize').inputValue(),'2');
+  await page.evaluate(()=>ArchiveUI.readCatalog());
+  assert.equal(await page.locator('#pageInfoTop').textContent(),'2 / 2');
   await page.selectOption('#pageSize','50');
   await page.setViewportSize(originalViewport);
   await page.click('#importTab');
@@ -118,8 +134,28 @@ async function snapshot(dir,{messagesOnly=false}={}){
   assert.equal(await page.locator('html').getAttribute('data-theme'),'dark','Modern standalone HTML follows app dark mode');
   assert.equal(await page.locator('iframe').count(),0);
   await page.locator('#backToArchive').click();await page.waitForFunction(()=>window.ArchiveUI?.records.size===8);
+  await page.selectOption('#pageSize','2');
+  await page.click('#nextTop');
+  await page.waitForFunction(()=>document.getElementById('pageInfo').textContent==='2 / 2');
+  const modernPage2=await page.locator('.subject').allTextContents();
+  for(const browserBack of [false,true]){
+   await page.locator('.subject').first().click();
+   await page.waitForURL(/archived_emails\/personal\/.*\.html\?/);
+   // Exact history return must work even when session storage was lost.
+   await page.evaluate(()=>{try{sessionStorage.clear();}catch{}});
+   if(browserBack)await page.goBack();else await page.locator('#backToArchive').click();
+   await page.waitForFunction(()=>document.getElementById('pageInfo')?.textContent==='2 / 2'&&document.getElementById('accountFilter')?.value==='personal');
+   assert.deepEqual(await page.locator('.subject').allTextContents(),modernPage2);
+   assert.equal(await page.locator('#pageInfoTop').textContent(),'2 / 2');
+   // Reproduce the second catalog load after returning.
+   await page.evaluate(()=>ArchiveUI.readCatalog());
+   assert.equal(await page.locator('#pageInfo').textContent(),'2 / 2');
+   assert.deepEqual(await page.locator('.subject').allTextContents(),modernPage2);
+  }
+  await page.selectOption('#pageSize','50');
   await page.selectOption('#accountFilter','');
-  console.log('PASS full-page modern email inherits light/dark setting and Back returns to Browse');
+  await page.waitForFunction(()=>document.getElementById('pageInfo').textContent==='1 / 1');
+  console.log('PASS modern and legacy Back preserve the results page; catalog refresh does not reset pagination');
   for(const [name,sum] of Object.entries(originalMessages))assert.equal((await snapshot(data,{messagesOnly:true}))[name],sum,'Import must not upgrade unrelated saved HTML');
   await importFile('example.mbox');assert.equal(await page.locator('#newCount').textContent(),'0');assert.equal(await page.locator('#dupeCount').textContent(),'4');
   await importFile('overlap.mbox');assert.equal(await page.locator('#newCount').textContent(),'1');assert.equal(await page.locator('#dupeCount').textContent(),'1');

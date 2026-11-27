@@ -7,34 +7,43 @@ const nestedViewer=/(?:^|\/)__email_archiver\/index\.html$/i.test(decodeURICompo
 const localUrl=p=>(nestedViewer?'../':'')+p;
 const returnKey='email-archive-return:'+location.pathname,imagesKey='email-archive-images:'+location.pathname;
 let remembered=null;
-try{const stored=sessionStorage.getItem(returnKey);if(stored){remembered=JSON.parse(stored);sessionStorage.removeItem(returnKey);}}catch{/* Session storage may be unavailable on file://. */}
- // A history entry survives full-document Back navigation even when file:// storage is unavailable.
-try{if(history.state?.archiveGuideReturn)remembered=history.state.archiveGuideReturn;}catch{}
-function clearGuideReturn(){
- try{if(history.state?.archiveGuideReturn){const next={...history.state};delete next.archiveGuideReturn;history.replaceState(next,'');}}catch{}
+try{
+ const stored=sessionStorage.getItem(returnKey);
+ if(stored){
+  const saved=JSON.parse(stored);
+  // A direct link in an old message can create a new history entry.
+  if(Number.isFinite(saved?.when)&&Date.now()-saved.when<=24*60*60*1000)remembered=saved;
+  sessionStorage.removeItem(returnKey);
+ }
+}catch{/* Session storage may be unavailable on file://. */}
+// Browser Back can restore the exact archive history entry without sessionStorage.
+// Keep this snapshot for as long as that history entry exists.
+try{const saved=history.state?.archiveReturn||history.state?.archiveGuideReturn;if(saved?.values)remembered=saved;}catch{}
+function clearArchiveReturn(){
+ try{
+  if(history.state?.archiveReturn||history.state?.archiveGuideReturn){
+   const next={...history.state};delete next.archiveReturn;delete next.archiveGuideReturn;history.replaceState(next,'');
+  }
+ }catch{}
 }
-clearGuideReturn();
+clearArchiveReturn();
 try{const saved=sessionStorage.getItem(imagesKey);if(saved!==null)$('autoImages').checked=saved==='on';}catch{/* Default to checked. */}
 $('autoImages').addEventListener('change',()=>{try{sessionStorage.setItem(imagesKey,$('autoImages').checked?'on':'off');}catch{}render();});
-function saveReturnPosition(section='browse',forGuide=false){
+function saveReturnPosition(section='browse'){
  const inputs=['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter','pageSize'];
  const values=Object.fromEntries(inputs.map(id=>[id,$(id).value]));
  const saved={values,page:currentPage,scrollY:window.scrollY,when:Date.now(),section};
- if(forGuide){
-  try{history.replaceState({...history.state,archiveGuideReturn:saved},'');}catch{}
- }
+ // Save for both email and guide navigation; session storage also supports old direct Back links.
+ try{history.replaceState({...history.state,archiveReturn:saved},'');}catch{}
  try{sessionStorage.setItem(returnKey,JSON.stringify(saved));}catch{}
 }
-function restoreReturnPosition(){
- if(!remembered)return;
- const old=remembered;remembered=null;
- if(!Number.isFinite(old.when)||Date.now()-old.when>30*60*1000)return;
- currentPage=Math.max(0,Number(old.page)||0);
- render();
- const y=Math.max(0,Number(old.scrollY)||0);
+function restoreReturnPosition(saved){
+ if(!saved||remembered!==saved)return;
+ remembered=null;
+ const y=Math.max(0,Number(saved.scrollY)||0);
  requestAnimationFrame(()=>window.scrollTo(0,y));
 }
-window.addEventListener('pageshow',event=>{if(event.persisted){clearGuideReturn();try{sessionStorage.removeItem(returnKey);}catch{}}});
+window.addEventListener('pageshow',event=>{if(event.persisted){clearArchiveReturn();try{sessionStorage.removeItem(returnKey);}catch{}}});
 // All indexed data lives beneath archived_emails/ relative to this index.html.
 function load(src){const p=chain.then(()=>loadScript(localUrl(src)));chain=p.catch(()=>{});return p;}
 function notice(s){$('operationNotice').textContent=s;$('operationNotice').hidden=!s;}
@@ -72,20 +81,27 @@ async function readCatalog(){
  all=[...records.values()].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||a.id.localeCompare(b.id));
  options('accountFilter',catalog.accounts,'All accounts');
  options('labelFilter',[...new Set(all.flatMap(r=>r.labels))].sort(),'All labels');
- if(remembered&&remembered.values&&Number.isFinite(remembered.when)&&Date.now()-remembered.when<=30*60*1000){
-  for(const [id,value] of Object.entries(remembered.values)){
-   if(['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter','pageSize'].includes(id)&&typeof value==='string')$(id).value=value;
+ const saved=remembered;
+ if(saved?.values){
+  for(const [id,value] of Object.entries(saved.values)){
+   if(!['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter','pageSize'].includes(id)||typeof value!=='string')continue;
+   const field=$(id);
+   if(field.tagName!=='SELECT'||Array.from(field.options).some(option=>option.value===value))field.value=value;
   }
  }
  $('activeRootInfo').textContent='archived_emails/ · '+all.length.toLocaleString('en-GB')+' indexed messages';
- await search();restoreReturnPosition();
- if(root===selectedRoot)await loadRootAccounts(selectedRoot);
+ // Reloading the catalog (including when saved folder access is restored)
+ // must not reset pagination. Only explicit filter changes reset to page one.
+ const page=saved?Math.max(0,Math.floor(Number(saved.page)||0)):currentPage;
+ const completed=await search({page});
+ if(completed&&root===selectedRoot&&revision===selectionVersion)restoreReturnPosition(saved);
+ if(root===selectedRoot&&revision===selectionVersion)await loadRootAccounts(selectedRoot);
 }
 function metadataText(r){return C.fold([r.subject,r.from,r.to,r.cc,r.bcc].join(' '));}
-async function search(){const v=++queryVersion;currentPage=0;const terms=C.fold($('query').value).split(/\s+/).filter(Boolean);const acc=$('accountFilter').value,lab=$('labelFilter').value,from=$('dateFrom').value,to=$('dateTo').value,attach=$('attachmentFilter').value;const candidates=all.filter(r=>(!acc||r.account===acc)&&(!lab||r.labels.includes(lab))&&(!from||r.day&&r.day>=from)&&(!to||r.day&&r.day<=to)&&(!attach||(attach==='yes')===!!r.attachments.length));
- if(!terms.length){matches=candidates;render();return;}const wanted=new Map(),found=new Set();for(const r of candidates){const key=r.account+'/'+r.id,meta=metadataText(r);if(terms.every(t=>meta.includes(t)))found.add(key);else wanted.set(key,meta);}
+async function search({page=0}={}){const v=++queryVersion;const terms=C.fold($('query').value).split(/\s+/).filter(Boolean);const acc=$('accountFilter').value,lab=$('labelFilter').value,from=$('dateFrom').value,to=$('dateTo').value,attach=$('attachmentFilter').value;const candidates=all.filter(r=>(!acc||r.account===acc)&&(!lab||r.labels.includes(lab))&&(!from||r.day&&r.day>=from)&&(!to||r.day&&r.day<=to)&&(!attach||(attach==='yes')===!!r.attachments.length));
+ if(!terms.length){matches=candidates;currentPage=page;render();return true;}const wanted=new Map(),found=new Set();for(const r of candidates){const key=r.account+'/'+r.id,meta=metadataText(r);if(terms.every(t=>meta.includes(t)))found.add(key);else wanted.set(key,meta);}
  $('resultInfo').textContent='Searching local text indexes…';let done=0;for(const seg of catalog.segments){if(v!==queryVersion)return;if(!seg.search)continue;let data=cache.get(seg.search);if(!data){data=await loadArchiveSegment(seg.search,root);cache.set(seg.search,data);if(cache.size>4)cache.delete(cache.keys().next().value);}for(const x of data.records){const meta=wanted.get(x.key);if(meta!==undefined){const hay=meta+' '+C.fold(x.text);if(terms.every(t=>hay.includes(t)))found.add(x.key);}}done++;if(done%5===0){$('resultInfo').textContent='Searched '+done+' indexes…';await new Promise(r=>setTimeout(r,0));}}
- if(v!==queryVersion)return;matches=candidates.filter(r=>found.has(r.account+'/'+r.id));render();}
+ if(v!==queryVersion)return false;matches=candidates.filter(r=>found.has(r.account+'/'+r.id));currentPage=page;render();return true;}
 function render(){const size=+$('pageSize').value,pages=Math.max(1,Math.ceil(matches.length/size));currentPage=Math.min(currentPage,pages-1);$('rows').replaceChildren();for(const r of matches.slice(currentPage*size,(currentPage+1)*size)){const tr=document.createElement('tr');const tdDate=document.createElement('td');tdDate.className='date';tdDate.textContent=r.date?new Date(r.date).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Unknown date';const tdAddr=document.createElement('td');tdAddr.textContent=r.from||'(Not specified)';const to=document.createElement('span');to.className='address';to.textContent='To: '+(r.to||'—');tdAddr.append(to);const tdSub=document.createElement('td');const a=document.createElement('a');a.className='subject';a.textContent=r.subject||'(No subject)';a.href='archived_emails/'+r.path.split('/').map(encodeURIComponent).join('/')+'?fromArchive=1&images='+($('autoImages').checked?'auto':'manual')+'&theme='+(document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light');a.target='_self';a.addEventListener('click',e=>{
  if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey)saveReturnPosition();
 });tdSub.append(a);for(const text of [r.account,...r.labels]){const s=document.createElement('span');s.className='badge';s.textContent=text;tdSub.append(s);}const tdAtt=document.createElement('td');tdAtt.textContent=(r.attachments.length?'⌕ '+r.attachments.length:'—')+(r.original?' · EML':'');tr.append(tdDate,tdAddr,tdSub,tdAtt);$('rows').append(tr);}$('empty').hidden=!!matches.length;$('resultInfo').textContent=matches.length.toLocaleString('en-GB')+' messages'+(matches.length!==all.length?' of '+all.length.toLocaleString('en-GB'):'');for(const suffix of ['', 'Top']){$('pageInfo'+suffix).textContent=(currentPage+1)+' / '+pages;$('prev'+suffix).disabled=currentPage===0;$('next'+suffix).disabled=currentPage>=pages-1;}}
@@ -102,13 +118,13 @@ function tab(which){
 }
 $('browseTab').onclick=()=>tab('browse');
 $('importTab').onclick=()=>tab('import');
-const rememberedSection=remembered&&Number.isFinite(remembered.when)&&Date.now()-remembered.when<=30*60*1000?remembered.section:null;
+const rememberedSection=remembered?.section;
 tab(rememberedSection==='import'||location.hash==='#import'?'import':'browse');
  // The fallback hash is only used for a direct guide link, not for normal navigation.
 if(location.hash==='#import'){try{history.replaceState(history.state,'',location.pathname+location.search);}catch{}}
 $('guideLink').addEventListener('click',e=>{
  if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey){
-  saveReturnPosition($('import').hidden?'browse':'import',true);
+  saveReturnPosition($('import').hidden?'browse':'import');
  }
 });
 function ready(){
