@@ -21,11 +21,11 @@ const manifest={kind:'manifest',format:1,total:1,generation:1,accounts:[account]
 const empty={...manifest,total:0,accounts:[],segments:[]};
 function elem(tag,id){return {tagName:tag,id,children:[],value:id==='pageSize'?'50':id==='importAccount'?'personal':'',
  files:[],disabled:false,hidden:false,checked:id==='autoImages',textContent:'',style:{},listeners:{},src:'',
- classList:{toggle(){}},replaceChildren(...items){this.children=items;if(id==='importAccountSelect')this.value=items[0]?.value||'__new__';},
+ classList:{toggle(){}},replaceChildren(...items){this.children=items;if(id==='accessStatus')this.textContent=items.map(item=>item.textContent||'').join('');if(id==='importAccountSelect')this.value=items[0]?.value||'__new__';},
  addEventListener(name,fn){this.listeners[name]=fn;},append(...items){this.children.push(...items);},add(item){this.children.push(item);},
  remove(){},removeAttribute(){this.src='';},hasAttribute(){return false;},setAttribute(){},getAttribute(){return null;}};}
 const elements=new Map(),el=id=>{if(!elements.has(id))elements.set(id,elem('element',id));return elements.get(id);};
-const appDirName='email_archiver_root',data={name:'archived_emails',kind:'directory',
+const appDirName='freedom_email_archiver',data={name:'archived_emails',kind:'directory',
  async *entries(){yield ['personal',{kind:'directory'}];}};
 let created=0,selected=null,option=null,pickerCalls=0,writeCount=0,foreignAttempt=0;
 const parent={name:appDirName,kind:'directory',
@@ -34,7 +34,7 @@ const parent={name:appDirName,kind:'directory',
 const wrong={name:'another_folder',kind:'directory'};
 let currentChoice=parent;
 const document={getElementById:el,documentElement:{getAttribute(){return 'light';}},
- createElement:tag=>elem(tag),head:{append(script){
+ createElement:tag=>elem(tag),createTextNode:text=>({textContent:text}),head:{append(script){
   const p=String(script.src).split('?')[0];
   const value=p==='archived_emails/catalog/archive.js'?manifest:
    p==='archived_emails/personal/catalog/data.js'?{kind:'metadata',records:[record]}:null;
@@ -45,8 +45,8 @@ const saved=new Map(),database={close(){},transaction(){const tx={objectStore(){
  get(key){const r={};queueMicrotask(()=>{r.result=saved.get(key);r.onsuccess?.();});return r;},
  put(value,key){saved.set(key,value);queueMicrotask(()=>tx.oncomplete?.());}};}};return tx;}};
 const indexedDB={open(){const req={result:database};queueMicrotask(()=>req.onsuccess?.());return req;}};
-const calls=[],C={VERSION:1,MANIFEST:'__email_archiver/assets/catalog/archive.js',
- PREVIOUS:'__email_archiver/assets/catalog/archive.previous.js',
+const calls=[],C={VERSION:1,MANIFEST:'catalog/archive.js',
+ PREVIOUS:'catalog/archive.previous.js',
  empty:()=>({...empty}),fold:x=>String(x||'').toLowerCase(),
  accountName(s){if(!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(s))throw Error('ACCOUNT');return s;},
  async exists(root,p){return root===parent&&p==='assets/core.js';},
@@ -65,7 +65,7 @@ const ArchiveReindex={
 };
 vm.runInNewContext(src,{window,document,showDirectoryPicker:window.showDirectoryPicker,indexedDB,
  ArchiveCore:C,ArchiveReindex,
- location:{pathname:'/test/email_archiver_root/index.html'},
+ location:{pathname:'/test/freedom_email_archiver/index.html'},
  Option:function Option(text,value){return {text,value};},sessionStorage:{getItem(){return null;},setItem(){},removeItem(){}},
  AbortController,setTimeout,clearTimeout,requestAnimationFrame:fn=>fn(),console},{filename:'assets/app.js'});
 async function tick(){await new Promise(r=>setTimeout(r,0));}

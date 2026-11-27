@@ -7,13 +7,11 @@
 !/SECURITY.md
 !/THIRD_PARTY_NOTICES.md
 !/index.html
-!/archive.js
-!/archive.previous.js
 !/assets/
 !/archived_emails/
 # Demo files tracked in Git stay tracked. Never auto-add new real emails or catalogs.
 /archived_emails/**
-!/examples/
+!/docs/
 !/scripts/
 !/tests/
 archive.lock

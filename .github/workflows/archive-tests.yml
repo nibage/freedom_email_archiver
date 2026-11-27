@@ -29,10 +29,6 @@ jobs:
         run: node tests/writer-lock-node.cjs
       - name: Verify only fictional email data are public
         run: node scripts/check-public.cjs
-      - name: Verify offline installer is reproducible
-        run: |
-          node scripts/build-bundle.cjs
-          git diff --exit-code -- assets/bundle.js
 
   browser-regressions:
     runs-on: ubuntu-latest

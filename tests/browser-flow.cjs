@@ -101,7 +101,7 @@ async function snapshot(dir,{messagesOnly=false}={}){
   await page.click('#reset');await page.waitForFunction(()=>document.getElementById('rows').children.length===4);
   await page.click('#importTab');
   console.log('PASS guide stays in the same tab and returns to Browse or Import');
-  await page.locator('#files').setInputFiles(path.join(repo,'examples/example.mbox'));
+  await page.locator('#files').setInputFiles(path.join(repo,'tests/fixtures/example.mbox'));
   await page.click('#start');await page.waitForFunction(()=>document.getElementById('stop').hidden);
   assert.equal(await page.locator('#status').textContent(),'Import not started');assert.match(await page.locator('#operationNotice').textContent(),/Enable archive access/);
   await page.click('#connectArchive');await page.waitForFunction(()=>!document.getElementById('connectArchive').disabled);
@@ -129,7 +129,7 @@ async function snapshot(dir,{messagesOnly=false}={}){
     await page.click('#connectArchive');
     await page.waitForFunction(()=>document.getElementById('accessStatus').textContent.includes('Archive access ready'));
    }
-   await page.locator('#files').setInputFiles(path.join(repo,'examples',file));await page.click('#start');
+   await page.locator('#files').setInputFiles(path.join(repo,'tests','fixtures',file));await page.click('#start');
    try{
     await page.waitForFunction(()=>document.getElementById('stop').hidden&&document.getElementById('status').textContent==='Import complete',null,{timeout:15000});
    }catch(e){
@@ -223,7 +223,7 @@ async function snapshot(dir,{messagesOnly=false}={}){
   assert.equal(await page.locator('.optional-maintenance').count(),0,'Removed appearance feature should not reappear');
   assert.equal(await page.locator('#refreshViewers').count(),0,'No old appearance update button');
   console.log('PASS no optional viewer appearance maintenance remains');
-  await page.locator('#files').setInputFiles(path.join(repo,'examples/example.mbox'));
+  await page.locator('#files').setInputFiles(path.join(repo,'tests/fixtures/example.mbox'));
   await page.evaluate(()=>{const run=ArchiveCore.Importer.prototype.run;window.testRuns=0;window.restoreRun=()=>ArchiveCore.Importer.prototype.run=run;
    ArchiveCore.Importer.prototype.run=async function(){window.testRuns++;await new Promise(r=>this.signal.addEventListener('abort',r,{once:true}));return {interrupted:true,issues:[]};};});
   await page.evaluate(()=>{document.getElementById('start').onclick();document.getElementById('start').onclick();});await page.waitForFunction(()=>testRuns===1);

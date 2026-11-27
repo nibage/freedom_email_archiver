@@ -43,7 +43,7 @@ const app=fs.readFileSync(path.join(root,'assets/app.js'),'utf8');
 assert(app.includes("a.href='archived_emails/'"),'Email list must link directly to standalone HTML.');
 assert(app.includes("'&theme='"),'Standalone email links inherit the current light/dark mode.');
 assert(index.includes('Email account folder inside the archive'),'Use clearer email account label.');
-assert(!index.includes('<aside')&&index.includes('class="panel import-guide"'),'Move incremental import guidance below the form.');
+assert(!index.includes('<aside')&&!index.includes('class="panel import-guide"')&&guide.includes('One portable archive'),'Portable archive instructions belong in the guide.');
 assert(!index.includes('No telemetry. No cloud API.'),'Remove redundant footer copy.');
 assert(!index.includes('These settings are independent.'),'Remove verbose EML guidance.');
 assert(css.includes('grid-template-columns:minmax(0,1fr);max-width:860px'),'Center the import instead of a two-column sidebar.');
