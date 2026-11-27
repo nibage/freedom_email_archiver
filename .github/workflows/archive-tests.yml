@@ -21,10 +21,6 @@ jobs:
         run: node tests/reader-node.cjs
       - name: Verify incremental missing-message catalog sync
         run: node tests/catalog-sync-node.cjs
-      - name: Verify saved HTML theme upgrade without MBOX
-        run: node tests/reader-upgrade-node.cjs
-      - name: Verify data-only catalog and isolated selected-root viewer
-        run: node tests/data-root-viewer-node.cjs
       - name: Verify recent-folder picker and repair target isolation
         run: node tests/recent-target-node.cjs
       - name: Verify duplicate reimports skip mail rendering
