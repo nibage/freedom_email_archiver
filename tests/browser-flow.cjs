@@ -38,7 +38,11 @@ async function snapshot(dir,{messagesOnly=false}={}){
   assert.equal(await page.locator('#browseTab').evaluate(el=>el.classList.contains('active')),false);
   assert.equal(await page.locator('.filters').isVisible(),false);
   const tabCount=context.pages().length;
+  assert.equal(await page.locator('#import .import-guide').count(),0,'Portable archive instructions belong in the guide');
   await page.click('#guideLink');await page.waitForURL(/GUIDE\.html\?from=import$/);
+  assert.equal(await page.getByRole('heading',{name:'1. One portable archive'}).count(),1);
+  assert.match(await page.locator('body').textContent(),/64 MiB per message/);
+  assert.match(await page.locator('body').textContent(),/keep the tab open/i);
   assert.equal(context.pages().length,tabCount);
   await page.click('#guideBack');await page.waitForURL(/index\.html$/);
   await page.waitForFunction(()=>window.ArchiveUI?.records.size===4&&!document.getElementById('import').hidden);

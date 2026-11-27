@@ -83,16 +83,13 @@ input::placeholder{color:var(--muted);opacity:.85}
 #repairProgressDetail{font-size:13px;color:var(--muted);margin:12px 0 0}
 
 /* Centered Import workspace, independent safety information, and short root label. */
-#import .activity-area,#import #reindex,#import .import-guide{max-width:860px;margin-left:auto;margin-right:auto}
+#import .activity-area,#import #reindex{max-width:860px;margin-left:auto;margin-right:auto}
 #import #reindex.repair-panel{margin-top:24px;margin-bottom:24px}
-#import .import-guide{margin-top:0;margin-bottom:24px}
-#import .import-guide h2{margin-top:0}
-.import-guide .eyebrow{font-size:11px}
 .target-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:18px 0 12px}
 .selected-path{color:var(--muted);font-size:13px;font-weight:500;min-width:0}
 .eml-options{gap:12px}
 footer{justify-content:flex-end}
-@media(max-width:760px){#import .importgrid,#import .activity-area,#import #reindex,#import .import-guide{max-width:100%}.target-actions{gap:10px}}
+@media(max-width:760px){#import .importgrid,#import .activity-area,#import #reindex{max-width:100%}.target-actions{gap:10px}}
 
 /* Unified import / automatic catalog check: no second repair form. */
 .import-form #importAccountSelect{width:100%}
