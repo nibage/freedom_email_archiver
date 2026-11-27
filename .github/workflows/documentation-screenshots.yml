@@ -1,0 +1,40 @@
+name: Refresh documentation screenshots
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/capture-screenshots.cjs'
+      - '.github/workflows/documentation-screenshots.yml'
+permissions:
+  contents: read
+jobs:
+  capture:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chromium (documentation only)
+        run: |
+          npm install --no-save --package-lock=false playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - name: Capture actual offline application
+        run: node scripts/capture-screenshots.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: documentation-screenshots
+          path: docs/screenshots/*.png
+      - name: Publish screenshots
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- docs/screenshots/*.png
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Refresh actual application screenshots"
+          git push origin HEAD:main
