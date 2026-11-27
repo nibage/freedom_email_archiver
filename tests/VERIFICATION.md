@@ -13,6 +13,7 @@ node tests/eml-node.cjs
 node tests/theme-node.cjs
 node tests/reader-node.cjs
 node tests/catalog-sync-node.cjs
+node tests/account-sync-node.cjs
 node tests/recent-target-node.cjs
 node tests/importer-lazy-node.cjs
 node tests/writer-lock-node.cjs
@@ -27,7 +28,7 @@ npx playwright install chromium
 node tests/browser-flow.cjs
 ```
 
-Set `CHROME_PATH` to an installed Chrome executable if needed. The test uses a disposable on-disk filesystem adapter, opens the real offline application, checks page and filter restoration, direct message rendering, imports, deduplication, attachment handling, full-text search, check/rebuild progress and cancellation, and runs the browser import-engine suite.
+Set `CHROME_PATH` to an installed Chrome executable if needed. The test uses a disposable on-disk filesystem adapter, opens the real offline application, checks page and filter restoration, direct message rendering, imports, deduplication, attachment handling, full-text search, check/rebuild progress and cancellation, account removal/restoration without rewriting other accounts, and runs the browser import-engine suite.
 
 For native filesystem testing, open `tests/index.html` in desktop Chrome/Edge and choose an empty disposable test folder. Before relying on the application for a large real archive, test import, interruption, restore and recovery against a backup. Automated browser adapters do not replace native OS picker testing.
 

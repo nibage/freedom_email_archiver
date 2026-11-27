@@ -21,6 +21,8 @@ jobs:
         run: node tests/reader-node.cjs
       - name: Verify incremental missing-message catalog sync
         run: node tests/catalog-sync-node.cjs
+      - name: Verify account-level catalog reconciliation
+        run: node tests/account-sync-node.cjs
       - name: Verify recent-folder picker and repair target isolation
         run: node tests/recent-target-node.cjs
       - name: Verify duplicate reimports skip mail rendering

@@ -181,5 +181,5 @@ async function sync(root,{write=false}={}){
  }catch(e){return {...result,deferred:true,error:e?.message||'CATALOG'};}
  finally{if(lock.lockWriter)await lock.lockWriter.close();}
 }
-g.ArchiveAccountSync={sync,segmentAccount};
+g.ArchiveAccountSync={sync,segmentAccount,validateRecord};
 })(globalThis);

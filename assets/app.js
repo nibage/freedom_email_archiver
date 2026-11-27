@@ -103,7 +103,7 @@ async function readCatalog({persist=true}={}){
  if(unavailable.size||invalidSegment)warnings.push('Unavailable account indexes'+(unavailable.size?': '+[...unavailable].sort().join(', '):'')+'. Other accounts remain available. Enable archive access to synchronize missing folders, or use Rebuild index if indexes are damaged.');
  catalogWarning=warnings.join(' ');browseNotice(catalogWarning);
  queryVersion++;
- catalog={...nextCatalog,accounts:[...new Set(nextCatalog.accounts.filter(a=>!unavailable.has(a)&&groups.has(a)))].sort(),segments:usable.filter(s=>!unavailable.has(ArchiveAccountSync.segmentAccount(s))),total:found.size};
+ catalog={...nextCatalog,accounts:[...groups.keys()].sort(),segments:usable.filter(s=>!unavailable.has(ArchiveAccountSync.segmentAccount(s))),total:found.size};
  records=found;cache.clear();
  all=[...records.values()].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||a.id.localeCompare(b.id));
  options('accountFilter',catalog.accounts,'All accounts');

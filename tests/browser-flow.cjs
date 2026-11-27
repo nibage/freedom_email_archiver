@@ -233,6 +233,33 @@ async function snapshot(dir,{messagesOnly=false}={}){
   await page.reload();await page.waitForFunction(()=>window.ArchiveUI?.records.size===12);await page.fill('#query','lighthouse');await page.waitForFunction(()=>document.getElementById('rows').children.length===3);
   assert.equal(await page.evaluate(()=>ArchiveUI.root),null);assert.deepEqual(errors,[]);
   console.log('PASS saved indexes and search reopen through file:// without browser-profile handles');
+  // Move an entire account away while leaving the global catalog in place.
+  const moved=path.join(temp,'moved-account');
+  const beforeMove=await fs.readFile(path.join(data,'catalog/archive.js'),'utf8');
+  const otherFiles=await snapshot(path.join(data,'personal'));
+  await fs.rename(path.join(data,'merged'),moved);
+  await page.reload();await page.waitForFunction(()=>window.ArchiveUI?.records.size===9);
+  assert.match(await page.locator('#notice').textContent(),/Unavailable account indexes: merged/);
+  assert.equal(await page.locator('#accountFilter option[value="merged"]').count(),0);
+  assert.equal(await fs.readFile(path.join(data,'catalog/archive.js'),'utf8'),beforeMove,'Read-only Browse must not change catalog');
+  await page.fill('#query','lighthouse');await page.waitForFunction(()=>document.getElementById('rows').children.length===2);
+  await page.click('#importTab');await page.click('#connectArchive');
+  await page.waitForFunction(()=>document.getElementById('accessStatus').textContent.includes('Archive access ready'));
+  const loadManifest=async name=>JSON.parse((await fs.readFile(path.join(data,'catalog',name),'utf8')).match(/^MailArchive\.receive\(([\s\S]*)\);\s*$/)[1]);
+  for(const name of ['archive.js','archive.previous.js']){
+   const m=await loadManifest(name);assert.equal(m.total,9);assert(!m.accounts.includes('merged'));assert(m.segments.every(s=>!s.meta.startsWith('merged/')));
+  }
+  assert.deepEqual(await snapshot(path.join(data,'personal')),otherFiles,'Removing an unrelated account must not rewrite its indexes or emails');
+  await fs.rename(moved,path.join(data,'merged'));
+  // Reopen with the adapter, then authorize the restored complete account.
+  await page.reload();await page.waitForFunction(()=>window.ArchiveUI?.records.size===9);
+  await page.click('#importTab');await page.click('#connectArchive');
+  await page.waitForFunction(()=>window.ArchiveUI?.records.size===12&&document.getElementById('accessStatus').textContent.includes('Archive access ready'));
+  assert.equal((await loadManifest('archive.js')).total,12);
+  assert.deepEqual(await snapshot(path.join(data,'personal')),otherFiles);
+  await page.click('#browseTab');await page.fill('#query','lighthouse');await page.waitForFunction(()=>document.getElementById('rows').children.length===3);
+  assert.deepEqual(errors,[]);
+  console.log('PASS deleted accounts are skipped without permission, pruned with write access, restored without touching other accounts');
   await page.goto(pathToFileURL(path.join(repo,'tests/index.html')).href);const suite=await page.evaluate(()=>runEnglishTests(archiveTestRoot,{}));
   assert.equal(suite.passed,suite.checks.length);console.log('PASS browser import-engine suite: '+suite.passed+' checks');
  }finally{server?.process()?.kill('SIGKILL');await fs.rm(temp,{recursive:true,force:true});}
