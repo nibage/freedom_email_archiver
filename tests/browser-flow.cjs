@@ -35,11 +35,12 @@ async function snapshot(dir,{messagesOnly=false}={}){
   const originalMessages=await snapshot(data,{messagesOnly:true});
   await importFile('example.mbox');assert.equal(await page.locator('#newCount').textContent(),'4');assert.equal(await page.evaluate(()=>ArchiveUI.records.size),8);
   await page.click('#browseTab');await page.selectOption('#accountFilter','personal');
+  await page.waitForFunction(()=>document.getElementById('accountFilter').value==='personal'&&document.getElementById('rows').children.length===4);
   await page.locator('.subject').filter({hasText:'A tiny trip plan'}).click();
   await page.waitForFunction(()=>location.pathname.includes('/archived_emails/personal/'));
   assert.equal(await page.locator('html').getAttribute('data-theme'),'light','Modern standalone HTML follows light mode');
   assert.equal(await page.locator('iframe').count(),0);
-  await page.locator('#backToArchive').click();await page.waitForFunction(()=>window.ArchiveUI?.records.size===8);
+  await page.locator('#backToArchive').click();await page.waitForFunction(()=>window.ArchiveUI?.records.size===8&&document.getElementById('accountFilter').value==='personal'&&document.getElementById('rows').children.length===4);
   await page.click('#themeToggle');await page.locator('.subject').filter({hasText:'A tiny trip plan'}).click();
   await page.waitForFunction(()=>location.pathname.includes('/archived_emails/personal/'));
   assert.equal(await page.locator('html').getAttribute('data-theme'),'dark','Modern standalone HTML follows app dark mode');
