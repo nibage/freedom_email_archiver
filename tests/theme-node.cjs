@@ -37,6 +37,11 @@ assert(!index.includes('YOUR MAIL LIBRARY')&&!index.includes('Keep what matters.
 assert(index.indexOf('id="files"')<index.indexOf('id="importAccount"'),'MBOX selection must precede account choice.');
 assert(!index.includes('id="chooseDir"')&&!index.includes('id="browseChooseRoot"'),'Arbitrary folder selection must be removed.');
 assert(index.includes('archived_emails/'),'Archive data always stays under the app root.');
+assert(index.includes('id="indexProgress"')&&!index.includes('optional-maintenance'),'Index actions have progress bars and no optional appearance maintenance.');
+assert(!index.includes('id="messageFrame"')&&!index.includes('id="messageViewer"'),'Saved emails open full-page, not in nested scroll containers.');
+const app=fs.readFileSync(path.join(root,'assets/app.js'),'utf8');
+assert(app.includes("a.href='archived_emails/'"),'Email list must link directly to standalone HTML.');
+assert(app.includes("'&theme='"),'Standalone email links inherit the current light/dark mode.');
 assert(index.includes('Email account folder inside the archive'),'Use clearer email account label.');
 assert(!index.includes('<aside')&&index.includes('class="panel import-guide"'),'Move incremental import guidance below the form.');
 assert(!index.includes('No telemetry. No cloud API.'),'Remove redundant footer copy.');
