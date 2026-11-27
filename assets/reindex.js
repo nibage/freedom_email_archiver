@@ -222,6 +222,22 @@ async function syncMissing(root,{signal,onProgress=()=>{},batchSize=100}={}){
   stats.committed=true;stats.accounts=accounts.size;notify();return stats;
  }finally{if(lock.lockWriter)await lock.lockWriter.close();}
 }
+/* Count matching saved HTML files by walking directory entries, without opening
+   their content or taking a writer lock. The second pass checks/rebuilds them.
+   This provides a real percentage instead of guessing from a stale manifest. */
+async function countMessages(root,{signal,onProgress=()=>{}}={}){
+ let count=0;
+ for await(const source of scan(root)){
+  if(signal?.aborted)return {count,interrupted:true};
+  count++;
+  if(count<=5||count%50===0){
+   onProgress(count);
+   await new Promise(resolve=>setTimeout(resolve,0));
+  }
+ }
+ onProgress(count);
+ return {count,interrupted:false};
+}
 /* Read-only deep inventory for Check existing. Unlike syncMissing, this never
    opens a writer or changes catalog files. */
 async function checkMissing(root,{signal,onProgress=()=>{}}={}){
@@ -260,5 +276,5 @@ async function checkMissing(root,{signal,onProgress=()=>{}}={}){
  if(!stats.interrupted)for(const savedPath of known.values())if(!present.has(savedPath))stats.stale++;
  notify();return stats;
 }
-g.ArchiveReindex={scan,fromHtml,inspect,rebuild,syncMissing,checkMissing,safeAttachmentHref};
+g.ArchiveReindex={scan,fromHtml,inspect,rebuild,syncMissing,checkMissing,countMessages,safeAttachmentHref};
 })(globalThis);
