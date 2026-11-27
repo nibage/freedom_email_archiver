@@ -1,9 +1,9 @@
 /* Native File System Access tests. All fixtures are fictional. */
-async function runEnglishTests(parent){
- const C=ArchiveCore,checks=[];function check(name,ok){checks.push({name,pass:!!ok});if(!ok)throw Error(name);}
+async function runEnglishTests(parent,{onCheck=()=>{}}={}){
+ const C=ArchiveCore,checks=[];function check(name,ok){checks.push({name,pass:!!ok});onCheck({name,pass:!!ok});if(!ok)throw Error(name);}
  const root=await parent.getDirectoryHandle('test-'+crypto.randomUUID(),{create:true});
  const first=()=>new File([ExampleFixtures.first],'example.mbox');let r=await new C.Importer(root,{batchSize:2}).run([first()],'example');check('First import stores four messages',r.stats.new===4&&r.stats.errors===0);
- check('Fresh catalogs use the sibling app directory',C.MANIFEST==='__email_archiver/assets/catalog/archive.js'&&await C.exists(root,C.MANIFEST)&&await C.exists(root,C.VIEWER_DIR+'archive.lock'));
+ check('Fresh catalogs use the data-only archive folder',await C.exists(root,'catalog/archive.js')&&await C.exists(root,'archive.lock'));
  async function contentPaths(d,p=''){const out=[];for await(const [n,h] of d.entries()){if(h.kind==='directory')out.push(...await contentPaths(h,p+n+'/'));else if(n.endsWith('.html')||p.includes('/attachments/'))out.push(p+n);}return out.sort();}
  const before=await contentPaths(root);const sanitize=DOMPurify.sanitize;let sanitized=0;DOMPurify.sanitize=function(...args){sanitized++;return sanitize.apply(this,args);};
  r=await new C.Importer(root).run([first()],'example');DOMPurify.sanitize=sanitize;check('Repeated import adds no messages',r.stats.new===0&&r.stats.duplicates===4);check('Reimport does not sanitize any current-renderer HTML',sanitized===0);check('Repeated import adds no HTML or attachment files',JSON.stringify(before)===JSON.stringify(await contentPaths(root)));
@@ -12,7 +12,9 @@ async function runEnglishTests(parent){
  check('Newly imported records carry a renderer marker',oldShardData.records[0].renderVersion===MailRenderer.RENDER_VERSION);
  delete oldShardData.records[0].renderVersion;await C.write(root,oldShard,C.wrap(oldShardData));
  r=await new C.Importer(root).run([first()],'example');
- check('Old unversioned HTML refreshes automatically just once',r.stats.refreshed===1&&r.stats.new===0);
+ check('Import does not implicitly refresh old unversioned HTML',r.stats.refreshed===0&&r.stats.new===0);
+ r=await new C.Importer(root,{refreshExisting:true}).run([first()],'example');
+ check('Explicit appearance refresh remains available',r.stats.refreshed===4&&r.stats.new===0);
  sanitized=0;DOMPurify.sanitize=function(...args){sanitized++;return sanitize.apply(this,args);};
  r=await new C.Importer(root).run([first()],'example');DOMPurify.sanitize=sanitize;
  check('Updated renderer is not invoked on a following reimport',sanitized===0);
@@ -20,27 +22,26 @@ async function runEnglishTests(parent){
  r=await new C.Importer(root).run([new File([ExampleFixtures.overlap],'extensionless')],'example');check('Overlapping export adds only the new message',r.stats.new===1&&r.stats.duplicates===1);
  let imp=await new C.Importer(root).open(),rows=[...imp.records.values()];check('Old messages remain present',rows.length===5);check('Gmail labels are merged',rows.find(x=>x.subject==='Welcome to your email archive').labels.includes('Saved'));check('Missing dates use the English folder',rows.find(x=>x.subject==='A note without a date').folder==='example/unknown-date');check('Metadata and text shards use the English catalog path',imp.m.segments.every(s=>s.meta.startsWith('example/catalog/')));
  const rich=rows.find(x=>x.subject==='A tiny trip plan');let html=await C.read(root,rich.path);check('Standalone message has English headers',html.includes('<dt>From</dt>')&&html.includes('<h2>Attachments</h2>'));
- check('Standalone message backlink goes to the sibling app',html.includes('href="../../../__email_archiver/index.html"'));check('CID is a local attachment URL',html.includes('src="attachments/'));check('Attachment paths are ASCII',rich.attachments.every(a=>/^[\x20-\x7e]+$/.test(a.href)));
+ check('Standalone message backlink goes to the parent application',html.includes('href="../../../../index.html"'));check('CID is a local attachment URL',html.includes('src="attachments/'));check('Attachment paths are ASCII',rich.attachments.every(a=>/^[\x20-\x7e]+$/.test(a.href)));
  const changed=ExampleFixtures.first.replace('Travel, Example','Travel, Example, Saved');sanitized=0;DOMPurify.sanitize=function(...args){sanitized++;return sanitize.apply(this,args);};
  await new C.Importer(root).run([new File([changed],'labels')],'example');DOMPurify.sanitize=sanitize;
  check('Label-only duplicate update reuses the already rendered HTML body',sanitized===0);check('Label-only update keeps attachment paths and files',JSON.stringify(before)===JSON.stringify((await contentPaths(root)).filter(x=>!x.includes(rows.find(r=>r.subject==='One more example').id))));
  const mail=(id,body)=>new TextEncoder().encode('From: a@example.invalid\nTo: b@example.invalid\nDate: Wed, 15 Jan 2025 12:00:00 +0000\n'+(id?'Message-ID: <'+id+'>\n':'')+'Subject: Synthetic\n\n'+body);const a=await C.prepare(mail('same@example.invalid','one'),'example'),b=await C.prepare(mail('same@example.invalid','two'),'example');check('Same Message-ID cannot discard different content',a.meta.id!==b.meta.id);check('Missing IDs deduplicate by content',(await C.prepare(mail('','same'),'example')).meta.id===(await C.prepare(mail('','same'),'example')).meta.id);
- const richMime=new TextEncoder().encode('From: designer@example.invalid\nTo: reader@example.invalid\nDate: Wed, 15 Jan 2025 12:00:00 +0000\nSubject: Styled sample\nMIME-Version: 1.0\nContent-Type: text/html; charset=utf-8\n\n<div style="color:#225588;font-weight:bold">Fictional formatting</div>');const parsedRich=await C.prepare(richMime,'example');check('HTML MIME import keeps safe colors and type',parsedRich.body.includes('color:#225588')&&parsedRich.body.includes('font-weight:bold'));
+ const richMime=new TextEncoder().encode('From: designer@example.invalid\nTo: reader@example.invalid\nDate: Wed, 15 Jan 2025 12:00:00 +0000\nSubject: Styled sample\nMIME-Version: 1.0\nContent-Type: text/html; charset=utf-8\n\n<div style="color:#225588;font-weight:bold">Fictional formatting</div>');const parsedRich=await C.prepare(richMime,'example');check('HTML MIME import keeps safe colors and type',(()=>{const t=document.createElement('template');t.innerHTML=parsedRich.body;const el=t.content.querySelector('[style]');return el?.style.color==='rgb(34, 85, 136)'&&el.style.fontWeight==='bold';})());
  const formatted=C.cleanHTML('<style>.accent{color:rgb(12, 34, 56)}</style><table bgcolor="#ffeeaa"><tr><td class="accent" style="font-weight:bold;background-image:url(https://example.invalid/a)">Styled</td></tr></table>');check('Safe inline fonts and table backgrounds survive',formatted.html.includes('font-weight:bold')&&formatted.html.includes('bgcolor="#ffeeaa"'));check('Safe stylesheet colors are inlined',formatted.html.includes('color:rgb(12, 34, 56)'));check('Network CSS is rejected',!formatted.html.includes('background-image')&&!formatted.html.includes('url('));
- const unsafe=C.cleanHTML('<script>alert(1)</script><img src="https://example.invalid/remote" onerror="alert(1)"><a href="javascript:alert(1)">x</a>');const inert=document.createElement('template');inert.innerHTML=unsafe.html;const remote=inert.content.querySelector('img');check('Untrusted scripts and event handlers are removed',!unsafe.html.includes('<script')&&!unsafe.html.includes('onerror')&&!unsafe.html.includes('javascript:'));check('Remote images do not auto-load',!remote.hasAttribute('src')&&remote.getAttribute('data-remote-src')==='https://example.invalid/remote');const embedded=C.cleanHTML('<img src="data:image/png;base64,aGVsbG8=" alt="inline"><img src="data:image/svg+xml;base64,PHN2Zz4=" alt="unsafe">');const raster=embedded.html.match(/<img[^>]*>/g)||[];check('Embedded raster data images remain offline; SVG data is refused',raster.length===2&&raster[0].includes('data:image/png;base64,')&&!raster[1].includes('src='));const remoteDoc=C.documentHTML({subject:'Example',date:null,rawDate:'',from:'a',to:'b',cc:'',bcc:'',labels:[],messageId:''},unsafe.html,[],'../../../');check('Remote loading is opt-in with a restricted script policy',remoteDoc.includes('loadRemoteImages')&&remoteDoc.includes("script-src 'sha256-")&&!remoteDoc.includes("script-src 'unsafe-inline'"));
+ const unsafe=C.cleanHTML('<script>alert(1)</script><img src="https://example.invalid/remote" onerror="alert(1)"><a href="javascript:alert(1)">x</a>');const inert=document.createElement('template');inert.innerHTML=unsafe.html;const remote=inert.content.querySelector('img');check('Untrusted scripts and event handlers are removed',!unsafe.html.includes('<script')&&!unsafe.html.includes('onerror')&&!unsafe.html.includes('javascript:'));check('Remote images do not auto-load',!remote.hasAttribute('src')&&remote.getAttribute('data-remote-src')==='https://example.invalid/remote');const embedded=C.cleanHTML('<img src="data:image/png;base64,aGVsbG8=" alt="inline"><img src="data:image/svg+xml;base64,PHN2Zz4=" alt="unsafe">');const raster=embedded.html.match(/<img[^>]*>/g)||[];check('Embedded raster data images remain offline; SVG data is refused',raster.length===2&&raster[0].includes('data:image/png;base64,')&&!raster[1].includes('src='));const remoteDoc=C.documentHTML({subject:'Example',date:null,rawDate:'',from:'a',to:'b',cc:'',bcc:'',labels:[],messageId:''},unsafe.html,[],'../../../');check('Remote loading is opt-in with a restricted script policy',remoteDoc.includes('loadRemoteImages')&&remoteDoc.includes("script-src &#39;sha256-")&&!remoteDoc.includes("script-src &#39;unsafe-inline&#39;"));
  const stored=await C.read(root,rich.path);const holder=document.createElement('template');holder.innerHTML=stored;
  const recordTag=holder.content.querySelector('#mail-archive-record[type="application/json"]');
  const embeddedRecord=JSON.parse(recordTag.textContent).record;
  check('Standalone HTML embeds inert structured metadata',!!recordTag&&embeddedRecord.id===rich.id&&embeddedRecord.path===rich.path);
  check('New HTML carries decoded MIME headers',embeddedRecord.mime.headers.some(h=>h.name==='content-type')&&embeddedRecord.mime.headers.some(h=>h.name==='subject'));
  const originalPaths=await contentPaths(root);
- // Rebuilding must recreate the entire deleted viewer catalog directory.
- const viewerAssets=await (await root.getDirectoryHandle('__email_archiver')).getDirectoryHandle('assets');
- await viewerAssets.removeEntry('catalog',{recursive:true});
- check('Catalog directory really is absent before rebuild',!await C.exists(root,C.MANIFEST));
+ // Rebuilding must recreate the deleted data catalog without another app copy.
+ await root.removeEntry('catalog',{recursive:true});
+ check('Catalog directory really is absent before rebuild',!await C.exists(root,'catalog/archive.js'));
  const rebuilt=await ArchiveReindex.rebuild(root,{batchSize:2});
  check('Reindex from HTML succeeds without MBOX',rebuilt.indexed===5&&rebuilt.committed&&rebuilt.errors===0);
- check('Rebuild uses sibling app manifest location',await C.exists(root,C.MANIFEST));
+ check('Rebuild uses data-only manifest location',await C.exists(root,'catalog/archive.js'));
  check('Reindex preserves every message and attachment file',JSON.stringify(originalPaths)===JSON.stringify(await contentPaths(root)));
  const restored=new C.Importer(root);await restored.open();
  check('Rebuilt catalog preserves known messages and labels',restored.records.size===5&&[...restored.records.values()].some(x=>x.labels.includes('Saved')));
@@ -130,7 +131,7 @@ async function runEnglishTests(parent){
  const failFolder=await parent.getDirectoryHandle('verify-fail-'+crypto.randomUUID(),{create:true});
  const realWrite=C.write;let didFail=false;
  C.write=async(root,path,bytes)=>realWrite(root,path,path.endsWith('.eml')?enc.encode('wrong persisted bytes'):bytes);
- try{await new C.Importer(failFolder).run([new File([selectedSource],'verify.mbox')],'test');}
+ try{await new C.Importer(failFolder,{emlPolicy:{important:true}}).run([new File([selectedSource],'verify.mbox')],'test');}
  catch(e){didFail=e.message==='EML_VERIFY_FAILED';}finally{C.write=realWrite;}
  check('Checksum failure prevents publishing message catalog or HTML',didFail&&(await C.manifest(failFolder)).total===0&&(await contentPaths(failFolder)).filter(p=>p.endsWith('.html')).length===0);
  const stopRoot=await parent.getDirectoryHandle('stop-'+crypto.randomUUID(),{create:true}),controller=new AbortController();r=await new C.Importer(stopRoot,{signal:controller.signal,onProgress:s=>{if(s.read>=2)controller.abort();}}).run([first()],'example');check('Cancellation commits completed messages',r.interrupted&&r.stats.new===2);r=await new C.Importer(stopRoot).run([first()],'example');check('Retry after cancellation adds only remaining messages',r.stats.new===2&&r.stats.duplicates===2);

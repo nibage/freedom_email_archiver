@@ -37,7 +37,7 @@ const document={createElement(tag){
   querySelector(selector){if(selector!=='main')return null;const match=/<main>([\s\S]*?)<\/main>/.exec(html);return match?{innerHTML:match[1]}:null;},
   querySelectorAll(){return [];}};}};
 }};
-const context={TextEncoder,TextDecoder,crypto:webcrypto,document,setTimeout,MailRenderer:renderer,
+const context={TextEncoder,TextDecoder,crypto:webcrypto,document,setTimeout,clearTimeout,DOMException,MailRenderer:renderer,
  decodeWords:value=>value,
  PostalMime:{async parse(bytes){
   const source=decoder.decode(bytes),labels=/^X-Gmail-Labels: ([^\r\n]+)/mi.exec(source)?.[1];
@@ -85,14 +85,16 @@ async function main(){
  const metadata=C.unwrap(await C.read(root,shard));delete metadata.records[0].renderVersion;
  await C.write(root,shard,C.wrap(metadata));
  sanitized=0;report=await new C.Importer(root).run([mbox()],'personal');
- assert.equal(report.stats.refreshed,1);
- assert.equal(sanitized,1,'old renderer version must refresh once');
+ assert.equal(report.stats.refreshed,0);
+ assert.equal(sanitized,0,'Import must not update old appearance automatically');
+ report=await new C.Importer(root,{refreshExisting:true}).run([mbox()],'personal');
+ assert.equal(report.stats.refreshed,1);assert.equal(sanitized,1,'Explicit appearance refresh is available separately');
  sanitized=0;report=await new C.Importer(root).run([mbox()],'personal');
  assert.equal(report.stats.refreshed,0);
  assert.equal(sanitized,0,'upgraded renderer must be reused on next reimport');
  console.log('PASS data-only imports create catalogs but never install application files');
  console.log('PASS duplicate reimport skips HTML rendering and disk writes');
  console.log('PASS label-only update reuses existing HTML body');
- console.log('PASS outdated renderer is refreshed exactly once');
+ console.log('PASS outdated renderer changes only when explicitly requested');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

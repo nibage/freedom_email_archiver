@@ -29,9 +29,28 @@ jobs:
         run: node tests/recent-target-node.cjs
       - name: Verify duplicate reimports skip mail rendering
         run: node tests/importer-lazy-node.cjs
+      - name: Verify bounded writer lock acquisition
+        run: node tests/writer-lock-node.cjs
       - name: Verify only fictional email data are public
         run: node scripts/check-public.cjs
       - name: Verify offline installer is reproducible
         run: |
           node scripts/build-bundle.cjs
           git diff --exit-code -- assets/bundle.js
+
+  browser-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser test tools (development only)
+        run: |
+          npm install --no-save --package-lock=false playwright@1.62.1
+          npx playwright install --with-deps chromium
+      - name: Verify actual file-browser import and recovery flow
+        run: node tests/browser-flow.cjs
