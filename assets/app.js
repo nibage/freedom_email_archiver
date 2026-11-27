@@ -88,8 +88,8 @@ async function search(){const v=++queryVersion;currentPage=0;const terms=C.fold(
  if(v!==queryVersion)return;matches=candidates.filter(r=>found.has(r.account+'/'+r.id));render();}
 function render(){const size=+$('pageSize').value,pages=Math.max(1,Math.ceil(matches.length/size));currentPage=Math.min(currentPage,pages-1);$('rows').replaceChildren();for(const r of matches.slice(currentPage*size,(currentPage+1)*size)){const tr=document.createElement('tr');const tdDate=document.createElement('td');tdDate.className='date';tdDate.textContent=r.date?new Date(r.date).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Unknown date';const tdAddr=document.createElement('td');tdAddr.textContent=r.from||'(Not specified)';const to=document.createElement('span');to.className='address';to.textContent='To: '+(r.to||'—');tdAddr.append(to);const tdSub=document.createElement('td');const a=document.createElement('a');a.className='subject';a.textContent=r.subject||'(No subject)';a.href='archived_emails/'+r.path.split('/').map(encodeURIComponent).join('/')+'?fromArchive=1&images='+($('autoImages').checked?'auto':'manual')+'&theme='+(document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light');a.target='_self';a.addEventListener('click',e=>{
  if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey)saveReturnPosition();
-});tdSub.append(a);for(const text of [r.account,...r.labels]){const s=document.createElement('span');s.className='badge';s.textContent=text;tdSub.append(s);}const tdAtt=document.createElement('td');tdAtt.textContent=(r.attachments.length?'⌕ '+r.attachments.length:'—')+(r.original?' · EML':'');tr.append(tdDate,tdAddr,tdSub,tdAtt);$('rows').append(tr);}$('empty').hidden=!!matches.length;$('resultInfo').textContent=matches.length.toLocaleString('en-GB')+' messages'+(matches.length!==all.length?' of '+all.length.toLocaleString('en-GB'):'');$('pageInfo').textContent=(currentPage+1)+' / '+pages;$('prev').disabled=currentPage===0;$('next').disabled=currentPage>=pages-1;}
-let timer;for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>search().catch(showBrowseError),200);});window.addEventListener('archive-theme-change',render);$('pageSize').onchange=render;$('prev').onclick=()=>{currentPage--;render();window.scrollTo(0,0);};$('next').onclick=()=>{currentPage++;render();window.scrollTo(0,0);};$('reset').onclick=()=>{for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).value='';search().catch(showBrowseError);};
+});tdSub.append(a);for(const text of [r.account,...r.labels]){const s=document.createElement('span');s.className='badge';s.textContent=text;tdSub.append(s);}const tdAtt=document.createElement('td');tdAtt.textContent=(r.attachments.length?'⌕ '+r.attachments.length:'—')+(r.original?' · EML':'');tr.append(tdDate,tdAddr,tdSub,tdAtt);$('rows').append(tr);}$('empty').hidden=!!matches.length;$('resultInfo').textContent=matches.length.toLocaleString('en-GB')+' messages'+(matches.length!==all.length?' of '+all.length.toLocaleString('en-GB'):'');for(const suffix of ['', 'Top']){$('pageInfo'+suffix).textContent=(currentPage+1)+' / '+pages;$('prev'+suffix).disabled=currentPage===0;$('next'+suffix).disabled=currentPage>=pages-1;}}
+let timer;for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>search().catch(showBrowseError),200);});window.addEventListener('archive-theme-change',render);$('pageSize').onchange=render;for(const suffix of ['', 'Top']){$('prev'+suffix).onclick=()=>{if(currentPage>0){currentPage--;render();window.scrollTo(0,0);}};$('next'+suffix).onclick=()=>{if(currentPage+1<Math.ceil(matches.length/+$('pageSize').value)){currentPage++;render();window.scrollTo(0,0);}};}$('reset').onclick=()=>{for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).value='';search().catch(showBrowseError);};
 function tab(which){
  $('browse').hidden=which!=='browse';
  $('import').hidden=which!=='import';
@@ -202,6 +202,14 @@ async function permissionGranted(handle,mode){
  if(typeof handle.queryPermission!=='function')return true;
  try{return await handle.queryPermission({mode})==='granted';}catch{return false;}
 }
+function setAccessStatus(message,kind=''){
+ const status=$('accessStatus');
+ if(!kind){status.textContent=message;return;}
+ const prefix=document.createElement('strong');
+ prefix.className=kind==='ready'?'access-ready':'access-error';
+ prefix.textContent=kind==='ready'?'Archive access ready:':'Archive access not enabled:';
+ status.replaceChildren(prefix,document.createTextNode(' '+message));
+}
 async function bindParent(parent,{create=false}={}){
  await validateAppParent(parent);
  const data=await parent.getDirectoryHandle('archived_emails',{create});
@@ -211,9 +219,8 @@ async function bindParent(parent,{create=false}={}){
  catch(e){browseNotice('The current archive index needs repair: '+errorText(e));}
  await loadRootAccounts(data);
  const canWrite=await permissionGranted(parent,'readwrite');
- $('accessStatus').textContent=canWrite
-  ?'Archive access ready: /'+parent.name+'/archived_emails/. Import and Check existing will not ask for a folder.'
-  :'Read access restored for archived_emails/. Click Enable archive access to permit importing and rebuilding.';
+ if(canWrite)setAccessStatus('/'+parent.name+'/archived_emails/. Import and Check existing will not ask for a folder.','ready');
+ else setAccessStatus('Read access restored for archived_emails/. Click Enable archive access to permit importing and rebuilding.');
  return data;
 }
 async function ensureArchive({write=false}={}){
@@ -228,7 +235,7 @@ async function ensureArchive({write=false}={}){
 $('connectArchive').onclick=async()=>{
  if(busy||repairBusy||readerBusy||accessBusy)return;
  accessBusy=true;ready();
- $('accessStatus').textContent='Authorizing only this application folder…';
+ setAccessStatus('Authorizing only this application folder…');
  try{
   let parent=parentHandle||recentParent;
   if(parent){
@@ -249,9 +256,8 @@ $('connectArchive').onclick=async()=>{
   await bindParent(parent,{create:true});
   $('connectArchive').textContent='Renew archive access';
  }catch(e){
-  $('accessStatus').textContent=e.name==='AbortError'
-   ?'Archive authorization cancelled. No files were changed.'
-   :'Archive access not enabled: '+errorText(e);
+  if(e.name==='AbortError')setAccessStatus('Archive authorization cancelled. No files were changed.');
+  else setAccessStatus(errorText(e),'error');
  }finally{accessBusy=false;ready();}
 };
 async function loadRecent(){

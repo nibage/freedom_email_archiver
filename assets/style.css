@@ -174,7 +174,8 @@ html[data-theme="dark"] .header-tab.active,html[data-theme="dark"] .header-tab.a
 }
 /* A single full-width filter strip sits directly below the header. */
 main{max-width:none;padding:0}
-#browseList>.filters{
+ #browseList>.filters{
+ position:sticky;top:0;z-index:10;
  grid-template-columns:minmax(200px,2.25fr) repeat(5,minmax(110px,1fr)) auto;
  align-items:end;gap:10px;padding:10px max(16px,calc((100% - 1224px)/2));
  border:0;border-bottom:1px solid var(--line);border-radius:0
@@ -204,4 +205,32 @@ main>#notice:not([hidden]){margin-top:12px}
  #browseList>.filters{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:8px 12px}
  #browseList>.filters .search{grid-column:1/-1}
  #browseList>.filters .quiet{width:100%}
+}
+
+/* Keep both pagination controls aligned with the same result set. */
+#browseList>.resultsbar{
+ display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:10px;
+}
+.resultsbar .pagination-top{margin:0;gap:12px;white-space:nowrap}
+.pagination-top button{padding:5px 10px}
+.pagination span{font-variant-numeric:tabular-nums;white-space:nowrap}
+.result-options{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.result-options .auto-image-choice{margin:0;order:0;flex-basis:auto}
+#accessStatus .access-error{color:#a51d35}
+#accessStatus .access-ready{color:#176b3a}
+html[data-theme="dark"] #accessStatus .access-error{color:#ff8c91}
+html[data-theme="dark"] #accessStatus .access-ready{color:#74d99a}
+@media(max-width:900px){
+ #browseList>.resultsbar{grid-template-columns:1fr auto}
+ .resultsbar .pagination-top{justify-self:end}
+ .result-options{grid-column:1/-1}
+}
+@media(max-width:500px){
+ #browseList>.resultsbar{grid-template-columns:1fr}
+ .resultsbar .pagination-top{justify-self:center}
+ .result-options{justify-content:space-between}
+}
+/* Do not let a wrapped filter strip cover most of a short mobile viewport. */
+@media(max-height:420px) and (max-width:680px){
+ #browseList>.filters{position:static}
 }
