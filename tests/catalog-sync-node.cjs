@@ -49,6 +49,14 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../assets/reindex.js'),'
 async function main(){
  const seen=[];
  const baselineWrites=writes.length,baselineLocks=lockCount;
+ const counts=[];
+ const count=await globals.ArchiveReindex.countMessages(root,{onProgress:n=>counts.push(n)});
+ assert.equal(count.count,2,'Fast pre-scan counts matching HTML without opening message files');
+ assert.equal(count.interrupted,false);
+ assert.equal(counts.at(-1),2);
+ assert.equal(writes.length,baselineWrites,'Counting must be read-only');
+ assert.equal(lockCount,baselineLocks,'Counting must not open a write lock');
+ assert.equal(reads.size,0,'Counting must not open HTML file content');
  const check=await globals.ArchiveReindex.checkMissing(root,{});
  assert.equal(check.scanned,2);assert.equal(check.indexed,1);assert.equal(check.missing,1);
  assert.equal(writes.length,baselineWrites,'Check existing must be read-only');
