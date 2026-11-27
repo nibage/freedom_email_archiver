@@ -307,7 +307,7 @@ $('start').onclick=async()=>{
 $('stop').onclick=()=>{
  controller?.abort();
  if(!$('progressPanel').hidden)$('status').textContent='Stopping after the current message and committing the catalog…';
- else $('existingProgressTitle').textContent='Stopping existing-email updates…';
+ 
 };
 function errorText(e){
  const msgs={
