@@ -76,47 +76,14 @@ async function search(){const v=++queryVersion;currentPage=0;const terms=C.fold(
  if(!terms.length){matches=candidates;render();return;}const wanted=new Map(),found=new Set();for(const r of candidates){const key=r.account+'/'+r.id,meta=metadataText(r);if(terms.every(t=>meta.includes(t)))found.add(key);else wanted.set(key,meta);}
  $('resultInfo').textContent='Searching local text indexes…';let done=0;for(const seg of catalog.segments){if(v!==queryVersion)return;if(!seg.search)continue;let data=cache.get(seg.search);if(!data){data=await loadArchiveSegment(seg.search,root);cache.set(seg.search,data);if(cache.size>4)cache.delete(cache.keys().next().value);}for(const x of data.records){const meta=wanted.get(x.key);if(meta!==undefined){const hay=meta+' '+C.fold(x.text);if(terms.every(t=>hay.includes(t)))found.add(x.key);}}done++;if(done%5===0){$('resultInfo').textContent='Searched '+done+' indexes…';await new Promise(r=>setTimeout(r,0));}}
  if(v!==queryVersion)return;matches=candidates.filter(r=>found.has(r.account+'/'+r.id));render();}
-let openMessageRecord=null,messageResources=null,openedRoot=null,openedMessageVersion=0,savedBrowseScroll=0,messageImagesApproved=false;
-function closeMessage(){
- openedMessageVersion++;
- $('messageViewer').hidden=true;$('browseList').hidden=false;
- $('messageFrame').removeAttribute('src');
- requestAnimationFrame(()=>window.scrollTo(0,savedBrowseScroll));
- $('loadMessageImages').hidden=true;
- openMessageRecord=null;openedRoot=null;messageImagesApproved=false;
- if(messageResources){messageResources.dispose();messageResources=null;}
-}
-async function showMessage(record,{loadExternal=false}={}){
- if(!root)return;
- if(!openMessageRecord)savedBrowseScroll=window.scrollY||0;
- const chosenRoot=root,version=++openedMessageVersion;
- const theme=document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light';
- $('messageInfo').textContent='Opening saved email…';
- $('messageViewer').hidden=false;$('browseList').hidden=true;
- try{
-  const rendered=await ArchiveDataReader.open(chosenRoot,record,{
-   theme,autoImages:loadExternal||messageImagesApproved||$('autoImages').checked
-  });
-  if(root!==chosenRoot||version!==openedMessageVersion){rendered.dispose();return;}
-  const previous=messageResources;messageResources=rendered;
-  $('messageFrame').src=rendered.url;
-  if(previous)previous.dispose();
-  openMessageRecord=record;openedRoot=chosenRoot;
-  $('loadMessageImages').hidden=!rendered.hasRemoteImages||loadExternal||messageImagesApproved||$('autoImages').checked;
-  $('messageInfo').textContent=record.subject||'(No subject)';
-  window.scrollTo(0,0);
- }catch(e){
-  closeMessage();
-  browseNotice('Could not open this saved message: '+(e.message||e.name)+'. No archive files were changed.');
- }
-}
-$('closeMessage').onclick=()=>closeMessage();
-$('loadMessageImages').onclick=()=>{if(openMessageRecord&&root===openedRoot){messageImagesApproved=true;void showMessage(openMessageRecord,{loadExternal:true});}};
-function render(){const size=+$('pageSize').value,pages=Math.max(1,Math.ceil(matches.length/size));currentPage=Math.min(currentPage,pages-1);$('rows').replaceChildren();for(const r of matches.slice(currentPage*size,(currentPage+1)*size)){const tr=document.createElement('tr');const tdDate=document.createElement('td');tdDate.className='date';tdDate.textContent=r.date?new Date(r.date).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Unknown date';const tdAddr=document.createElement('td');tdAddr.textContent=r.from||'(Not specified)';const to=document.createElement('span');to.className='address';to.textContent='To: '+(r.to||'—');tdAddr.append(to);const tdSub=document.createElement('td');const a=document.createElement('a');a.className='subject';a.textContent=r.subject||'(No subject)';a.href=root?'#saved-email':'archived_emails/'+r.path.split('/').map(encodeURIComponent).join('/')+'?fromArchive=1&images='+($('autoImages').checked?'auto':'manual')+'&theme='+(document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light');a.target='_self';a.addEventListener('click',e=>{
- if(root){e.preventDefault();void showMessage(r);return;}
- if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey)saveReturnPosition();
-});tdSub.append(a);for(const text of [r.account,...r.labels]){const s=document.createElement('span');s.className='badge';s.textContent=text;tdSub.append(s);}const tdAtt=document.createElement('td');tdAtt.textContent=(r.attachments.length?'⌕ '+r.attachments.length:'—')+(r.original?' · EML':'');tr.append(tdDate,tdAddr,tdSub,tdAtt);$('rows').append(tr);}$('empty').hidden=!!matches.length;$('resultInfo').textContent=matches.length.toLocaleString('en-GB')+' messages'+(matches.length!==all.length?' of '+all.length.toLocaleString('en-GB'):'');$('pageInfo').textContent=(currentPage+1)+' / '+pages;$('prev').disabled=currentPage===0;$('next').disabled=currentPage>=pages-1;}
-let timer;for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>search().catch(showBrowseError),200);});window.addEventListener('archive-theme-change',()=>{render();if(openMessageRecord&&root===openedRoot)void showMessage(openMessageRecord,{loadExternal:messageImagesApproved});});$('pageSize').onchange=render;$('prev').onclick=()=>{currentPage--;render();};$('next').onclick=()=>{currentPage++;render();};$('reset').onclick=()=>{for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).value='';search().catch(showBrowseError);};
+function render(){const size=+$('pageSize').value,pages=Math.max(1,Math.ceil(matches.length/size));currentPage=Math.min(currentPage,pages-1);$('rows').replaceChildren();for(const r of matches.slice(currentPage*size,(currentPage+1)*size)){const tr=document.createElement('tr');const tdDate=document.createElement('td');tdDate.className='date';tdDate.textContent=r.date?new Date(r.date).toLocaleString('en-GB',{dateStyle:'medium',timeStyle:'short'}):'Unknown date';const tdAddr=document.createElement('td');tdAddr.textContent=r.from||'(Not specified)';const to=document.createElement('span');to.className='address';to.textContent='To: '+(r.to||'—');tdAddr.append(to);const tdSub=document.createElement('td');const a=document.createElement('a');a.className='subject';a.textContent=r.subject||'(No subject)';a.href='archived_emails/'+r.path.split('/').map(encodeURIComponent).join('/')+
+ '?fromArchive=1&images='+($('autoImages').checked?'auto':'manual')+
+ '&theme='+(document.documentElement.getAttribute('data-theme')==='dark'?'dark':'light');
+ a.target='_self';
+ a.addEventListener('click',e=>{
+  if(e.button===0&&!e.ctrlKey&&!e.metaKey&&!e.shiftKey&&!e.altKey)saveReturnPosition();
+ });tdSub.append(a);for(const text of [r.account,...r.labels]){const s=document.createElement('span');s.className='badge';s.textContent=text;tdSub.append(s);}const tdAtt=document.createElement('td');tdAtt.textContent=(r.attachments.length?'⌕ '+r.attachments.length:'—')+(r.original?' · EML':'');tr.append(tdDate,tdAddr,tdSub,tdAtt);$('rows').append(tr);}$('empty').hidden=!!matches.length;$('resultInfo').textContent=matches.length.toLocaleString('en-GB')+' messages'+(matches.length!==all.length?' of '+all.length.toLocaleString('en-GB'):'');$('pageInfo').textContent=(currentPage+1)+' / '+pages;$('prev').disabled=currentPage===0;$('next').disabled=currentPage>=pages-1;}
+let timer;for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>search().catch(showBrowseError),200);});window.addEventListener('archive-theme-change',render);$('pageSize').onchange=render;$('prev').onclick=()=>{currentPage--;render();};$('next').onclick=()=>{currentPage++;render();};$('reset').onclick=()=>{for(const id of ['query','accountFilter','labelFilter','dateFrom','dateTo','attachmentFilter'])$(id).value='';search().catch(showBrowseError);};
 function tab(which){
  $('browse').hidden=which!=='browse';
  $('import').hidden=which!=='import';
@@ -127,7 +94,7 @@ $('importTab').onclick=()=>tab('import');
 function ready(){
  const active=busy||repairBusy||readerBusy||accessBusy;
  $('start').disabled=active||!$('files').files.length;
- for(const id of ['files','importAccountSelect','importAccount','connectArchive','previewReaders','upgradeReaders','refreshViewers','retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=active;
+ for(const id of ['files','importAccountSelect','importAccount','connectArchive','previewReaders','upgradeReaders','retainSignedEml','retainStarredEml','retainImportantEml'])$(id).disabled=active;
 }
 const viewerKey=location.pathname;
 const folderPreference='app-root:'+viewerKey,accountPreference='account:'+viewerKey;
