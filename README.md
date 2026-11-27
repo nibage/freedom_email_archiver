@@ -1,13 +1,13 @@
 # Freedom Email Archiver
 
-A self-contained, offline archive of exported MBOX email. **The application always uses its own `archived_emails/` folder.** It never selects a different data root, copies itself into another folder or runs a server.
+A self-contained, offline archive of exported MBOX email. The portable application folder is `freedom_email_archiver/` (or any name you choose). **The application always uses its own `archived_emails/` folder.** It never selects a different data root, copies itself into another folder or runs a server.
 
 The public repository ships four fictional demonstration messages and their attachments under `archived_emails/example/`, with the demonstration catalog under `archived_emails/catalog/`. Do not put real mail in a Git checkout you publish.
 
 ## Directory structure
 
 ```text
-email_archiver_root/
+freedom_email_archiver/
 ├── index.html                 ← Double-click this to read
 ├── GUIDE.html
 ├── assets/                    ← Application code, styles, icons
@@ -32,7 +32,7 @@ email_archiver_root/
     └── archive.lock           ← Created during a write operation
 ```
 
-There is **no folder selection for another data root**. Copy or move the **whole `email_archiver_root/` folder** between Windows/Linux/pCloud installations. All accounts always remain inside its `archived_emails/` subfolder. A second independent archive can be created by **manually copying the complete application folder** to another location.
+There is **no folder selection for another data root**. Copy or move the **whole `freedom_email_archiver/` folder** between Windows/Linux/pCloud installations. All accounts always remain inside its `archived_emails/` subfolder. A second independent archive can be created by **manually copying the complete application folder** to another location.
 
 ## Reading mail
 
@@ -42,7 +42,7 @@ Click a message to read it. It opens its standalone HTML in the same tab, with r
 
 ## Importing an MBOX
 
-1. Before importing or scanning existing files for the first time, click **Enable archive access**. Chrome/Edge will ask you to select the **folder containing the opened `index.html`** (for example `email_archiver_root/`), **not** the MBOX and **not** the `archived_emails/` subfolder. This is a one-time authorization for reading/writing `archived_emails/`, not a separate data-root choice.
+1. Before importing or scanning existing files for the first time, click **Enable archive access**. Chrome/Edge will ask you to select the **folder containing the opened `index.html`** (for example `freedom_email_archiver/`), **not** the MBOX and **not** the `archived_emails/` subfolder. This is a one-time authorization for reading/writing `archived_emails/`, not a separate data-root choice.
 2. Choose one or more MBOX files through the MBOX file selector, and select an existing account or **+ New account…**.
 3. Click **Start import**. Once the archive is authorized, it begins processing without opening another folder/file picker. If authorization is missing or expired, a clear status asks you to use **Enable archive access**; it never silently launches a chooser.
 4. Import reads the selected MBOX and the saved metadata catalog for deduplication, then adds messages to `archived_emails/<account>/`. It does not scan all saved HTML, repair indexes or update old message appearance first. Source MBOX files are never modified. If the catalog is damaged, use **Rebuild index** explicitly before retrying.
@@ -68,13 +68,13 @@ After copying, removing or merging account folders, use **Rebuild index** with n
 
 A healthy normal MBOX import does not inspect unrelated HTML or run either maintenance operation. Its existing catalog preserves earlier indexed mail omitted from a new export. Manual filesystem changes become visible after an explicit index rebuild. Duplicate messages with older appearance are skipped too. A changed label or optional EML retention may still update that particular duplicate's metadata.
 
-### Recovering from a deleted `__email_archiver` folder
+### Recovering saved emails without an index
 
-If you still have `account/year/month/email-*.html` files and attachments from an older archive but deleted its separate `__email_archiver/` program/index folder, first back them up. Place **only the account folders** inside the new `email_archiver_root/archived_emails/` folder, retaining year/month and attachment subfolders. Do not copy an old root-level app or `__email_archiver/` into the new app. Then open the new `index.html`, click **Enable archive access** once, and choose **Rebuild index**. It reconstructs a fresh catalog from the saved HTML, or explains if damaged files prevent recovery.
+If you have saved email HTML files and attachments but no working catalog, back them up first. Copy only the email account folders into `freedom_email_archiver/archived_emails/`, keeping their year/month, attachment and EML subfolders. Open `freedom_email_archiver/index.html`, click **Enable archive access**, select the application folder and choose **Rebuild index**. The app creates a fresh catalog from the saved HTML without changing the messages.
 
 ## Backup and browser support
 
-Back up the **whole `email_archiver_root/` tree**: `index.html`, `assets/`, `archived_emails/`, optional EML files and all catalogs. Wait for synced folders to be fully available offline before importing. No login, CDN, telemetry, cloud API or server is needed. The data is **not encrypted**, so keep private backups protected.
+Back up the **whole `freedom_email_archiver/` tree**: `index.html`, `assets/`, `archived_emails/`, optional EML files and all catalogs. Wait for synced folders to be fully available offline before importing. No login, CDN, telemetry, cloud API or server is needed. The data is **not encrypted**, so keep private backups protected.
 
 Chrome/Edge desktop is required for local MBOX import and filesystem catalog rebuilding. Reading already indexed HTML and catalogs uses ordinary local classic scripts and relative paths, but Firefox/Safari have not been fully verified. A message is limited to 64 MiB. Large imports are streamed, and complex HTML may differ from Thunderbird after sanitization. Keep the source MBOX separately for high-fidelity source preservation or signature verification.
 

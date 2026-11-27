@@ -4,8 +4,8 @@
 <p>Keep your emails on your own computer, browse them offline and move your archive whenever you need to. No account, server or internet connection is required.</p>
 
 <h2>1. One portable archive</h2>
-<p>The application and your emails stay together in one folder. Open <code>index.html</code> to use the archive. Keep the <code>assets/</code> and <code>archived_emails/</code> folders beside it.</p>
-<pre>email_archiver_root/
+<p>The application and your emails stay together in <code>freedom_email_archiver/</code> (or any folder name you choose). Open its <code>index.html</code> to use the archive. Keep the <code>assets/</code> and <code>archived_emails/</code> folders beside it.</p>
+<pre>freedom_email_archiver/
   index.html
   GUIDE.html
   assets/
@@ -31,7 +31,7 @@
 <h2>3. Import emails from MBOX</h2>
 <ol>
 <li>Open <strong>Import</strong> in desktop Chrome or Edge.</li>
-<li>Click <strong>Enable archive access</strong> and select the folder containing <code>index.html</code>. Do not select <code>archived_emails/</code> or the MBOX file in this dialog.</li>
+<li>Click <strong>Enable archive access</strong> and select the application folder, for example <code>freedom_email_archiver/</code>, containing <code>index.html</code>. Do not select <code>archived_emails/</code> or the MBOX file in this dialog.</li>
 <li>Select one or more MBOX files using the file selector.</li>
 <li>Choose an account or create one with <strong>+ New account…</strong>. Select any optional EML copies you want to keep.</li>
 <li>Click <strong>Start import</strong> and wait until it finishes. Then return to Browse archive.</li>
@@ -52,7 +52,7 @@
 <li>To back up or move your archive, copy the entire application folder, including <code>index.html</code>, <code>assets/</code> and <code>archived_emails/</code>.</li>
 <li>To create a separate archive, copy the whole folder to another location.</li>
 <li>To merge archives, back them up first. Copy the account folders into <code>archived_emails/</code> and keep their year/month, attachment and EML folders intact. Resolve file conflicts carefully, then click <strong>Rebuild index</strong>.</li>
-<li>If an old <code>__email_archiver/</code> folder is missing, copy only the surviving email account folders into <code>archived_emails/</code> and rebuild the index.</li>
+<li>To recover saved emails without an index, back them up first, copy their account folders into <code>freedom_email_archiver/archived_emails/</code> and click <strong>Rebuild index</strong>.</li>
 </ul>
 <p>If you use pCloud or another sync service, make sure all files are available offline before importing, checking or rebuilding. Allow syncing to finish before writing to the archive on another computer.</p>
 
