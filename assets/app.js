@@ -369,6 +369,8 @@ $('previewReaders').onclick=async()=>{
   const total=await countIndexFiles(target,readerController.signal);
   if(total===null){
    $('readerStatus').textContent='Check existing stopped. No files were changed.';
+   $('indexProgressTitle').textContent='Check existing stopped';
+   $('indexProgressDetail').textContent='Stopped while counting saved HTML files. No files changed.';
    return;
   }
   $('indexProgressTitle').textContent='Checking '+total+' saved HTML messages';
@@ -414,6 +416,8 @@ $('upgradeReaders').onclick=async()=>{
   const total=await countIndexFiles(target,repairController.signal);
   if(total===null){
    $('catalogStatus').textContent='Rebuild stopped; the previous catalog was preserved.';
+   $('indexProgressTitle').textContent='Index rebuild stopped';
+   $('indexProgressDetail').textContent='Stopped while counting files. The published index is unchanged.';
    return;
   }
   // An extra progress tick represents the final atomic manifest publication.
