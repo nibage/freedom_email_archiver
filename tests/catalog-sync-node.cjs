@@ -49,7 +49,12 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../assets/reindex.js'),'
 async function main(){
  const seen=[];
  const baselineWrites=writes.length,baselineLocks=lockCount;
- const check=await globals.ArchiveReindex.checkMissing(root,{});
+ const inventoryProgress=[];
+ const check=await globals.ArchiveReindex.checkMissing(root,{onProgress:p=>inventoryProgress.push(p)});
+ assert(inventoryProgress.some(p=>p.phase==='counting'&&p.counted===0),
+  'Check existing announces a read-only counting phase before opening saved HTML');
+ assert(inventoryProgress.some(p=>p.phase==='scanning'&&p.total===2),
+  'Check existing reports the actual total for a determinate progress bar');
  assert.equal(check.scanned,2);assert.equal(check.indexed,1);assert.equal(check.missing,1);
  assert.equal(writes.length,baselineWrites,'Check existing must be read-only');
  assert.equal(lockCount,baselineLocks,'Check existing must not request a writer lock');
