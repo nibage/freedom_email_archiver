@@ -19,6 +19,23 @@ async function snapshot(dir,{messagesOnly=false}={}){
   const browser=await chromium.connect(server.wsEndpoint()),context=await browser.newContext({offline:true}),page=await context.newPage(),errors=[];
   page.on('pageerror',e=>errors.push(e.message));await attachTestFilesystem(page,app);
   await page.goto(pathToFileURL(path.join(app,'index.html')).href);await page.waitForFunction(()=>window.ArchiveUI?.records.size===4);
+  // Demo files must match the renderer used for newly imported emails.
+  const demos=await page.evaluate(()=>[...ArchiveUI.records.values()]);
+  for(const record of demos){
+   const saved=await fs.readFile(path.join(data,record.path),'utf8');
+   const body=/<main>([\s\S]*?)<\/main>/.exec(saved)[1];
+   const meta=JSON.parse(/<script id="mail-archive-record" type="application\/json">([\s\S]*?)<\/script>/.exec(saved)[1]).record;
+   const rendered=await page.evaluate(({meta,body})=>({
+    version:MailRenderer.RENDER_VERSION,
+    html:MailRenderer.documentHTML(meta,body,meta.attachments,'../'.repeat(meta.folder.split('/').length+1))
+   }),{meta,body});
+   assert.equal(record.renderVersion,rendered.version);
+   assert.equal(meta.renderVersion,rendered.version);
+   assert.equal(saved.trim(),rendered.html.trim(),'Demo shell must match current renderer: '+record.subject);
+   if(record.subject==='A tiny trip plan')assert.match(body,/^<div class="mail-content">/);
+   else assert.match(body,/^<pre>[\s\S]*<\/pre>$/,'Plain text demo must match imported plain text: '+record.subject);
+  }
+  console.log('PASS all four demo emails match the current HTML renderer');
   // Compact header and actual pagination on the four-message demo catalog.
   const originalViewport=page.viewportSize();
   await page.setViewportSize({width:1280,height:260});
@@ -45,15 +62,15 @@ async function snapshot(dir,{messagesOnly=false}={}){
   assert.equal(await page.locator('#next').isDisabled(),true);
   await page.click('#prevTop');
   await page.waitForFunction(()=>document.getElementById('pageInfo').textContent==='1 / 2');
-  // Old saved messages use a normal href back to index.html.
+  // The example account must preserve pagination when returning from mail.
   await page.click('#nextTop');
   await page.waitForFunction(()=>document.getElementById('pageInfo').textContent==='2 / 2');
-  const legacyPage2=await page.locator('.subject').allTextContents();
+  const examplePage2=await page.locator('.subject').allTextContents();
   await page.locator('.subject').first().click();
   await page.waitForURL(/archived_emails\/example\/.*\.html\?/);
   await page.locator('header a').first().click();
   await page.waitForFunction(()=>document.getElementById('pageInfo')?.textContent==='2 / 2');
-  assert.deepEqual(await page.locator('.subject').allTextContents(),legacyPage2);
+  assert.deepEqual(await page.locator('.subject').allTextContents(),examplePage2);
   assert.equal(await page.locator('#pageSize').inputValue(),'2');
   await page.evaluate(()=>ArchiveUI.readCatalog());
   assert.equal(await page.locator('#pageInfoTop').textContent(),'2 / 2');
@@ -102,7 +119,7 @@ async function snapshot(dir,{messagesOnly=false}={}){
   // disposable test adapter before testing actual writes.
   await page.click('#importTab');await page.click('#connectArchive');
   await page.waitForFunction(()=>document.getElementById('accessStatus').textContent.includes('Archive access ready'));
-  console.log('PASS full-page legacy HTML, relative CID and direct Back navigation');
+  console.log('PASS full-page example HTML, relative CID and Back navigation');
   await page.evaluate(()=>{ArchiveReindex.syncMissing=()=>{throw Error('Unexpected implicit catalog scan');};});
   async function importFile(file){
    await page.click('#importTab');
