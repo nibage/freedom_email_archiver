@@ -7,6 +7,8 @@ assert(!html.includes('id="chooseDir"')&&!html.includes('id="browseChooseRoot"')
 assert(!html.includes('id="rootOpenInfo"')&&!html.includes('id="createArchive"'),'No self-copy/launcher messaging');
 assert(html.includes('archived_emails/')&&html.includes('id="files"'),'Fixed archive path and MBOX chooser');
 assert(html.includes('id="connectArchive"'),'Archive permission setup must be explicit and separate from Import and Check.');
+assert(html.includes('id="existingProgress"')&&!html.includes('id="refreshViewers"'),'Check/Rebuild have progress and appearance maintenance is removed');
+assert(!html.includes('id="messageFrame"'),'Message viewing must be full-page, not a nested scrolling iframe');
 assert(!src.slice(src.indexOf('async function ensureArchive'),src.indexOf("$('connectArchive').onclick")).includes('showDirectoryPicker('),'Import and Check may not open a directory chooser.');
 assert(!src.includes('ArchiveBundle')&&!src.includes('await install('),'No installer or app self-copy');
 assert(src.includes('archived_emails/catalog/archive.js'),'Read-only file:// catalog loading needs a fixed local path');
@@ -57,17 +59,12 @@ const calls=[],C={VERSION:1,MANIFEST:'__email_archiver/assets/catalog/archive.js
  async catalogPaths(){return {viewerDir:'',current:'catalog/archive.js',linkBackDir:'../'};},
  Importer:class{async run(files,account){calls.push('mbox:'+account);assert.equal(this instanceof C.Importer,true);return {interrupted:false,issues:[]};}}};
 const ArchiveReindex={
- async checkMissing(root,{onProgress}){assert.equal(root,data);calls.push('check');const r={scanned:1,indexed:0,missing:1,damaged:false,interrupted:false};onProgress(r);return r;},
+ async checkMissing(root,{onProgress}){assert.equal(root,data);calls.push('check');const r={phase:'complete',total:1,scanned:1,indexed:0,missing:1,stale:0,errors:0,brokenAttachments:0,missingOriginals:0,damaged:false,interrupted:false};onProgress(r);return r;},
  async syncMissing(root,{onProgress}){assert.equal(root,data);calls.push('sync');const r={scanned:1,skipped:1,indexed:0,interrupted:false};onProgress(r);return r;},
- async rebuild(root,{onProgress}){assert.equal(root,data);calls.push('rebuild');const r={scanned:1,indexed:1,errors:0,interrupted:false};onProgress(r);return r;}
+ async rebuild(root,{onProgress}){assert.equal(root,data);calls.push('rebuild');const r={phase:'complete',total:1,scanned:1,indexed:1,errors:0,brokenAttachments:0,missingOriginals:0,committed:true,interrupted:false};onProgress(r);return r;}
 };
-const ArchiveReaderUpgrade={async refresh(root,{write=false,onProgress}){assert.equal(root,data);
- calls.push(write?'update':'preview');const r={phase:'complete',scanned:1,total:1,
- eligible:0,updated:0,current:1,unsupported:0,errors:0,interrupted:false};
- onProgress(r);return r;}};
-const ArchiveDataReader={async open(){return {url:'blob:mock',hasRemoteImages:false,dispose(){}};}};
 vm.runInNewContext(src,{window,document,showDirectoryPicker:window.showDirectoryPicker,indexedDB,
- ArchiveCore:C,ArchiveReindex,ArchiveReaderUpgrade,ArchiveDataReader,
+ ArchiveCore:C,ArchiveReindex,
  location:{pathname:'/test/email_archiver_root/index.html'},
  Option:function Option(text,value){return {text,value};},sessionStorage:{getItem(){return null;},setItem(){},removeItem(){}},
  AbortController,setTimeout,clearTimeout,requestAnimationFrame:fn=>fn(),console},{filename:'assets/app.js'});
@@ -106,13 +103,18 @@ async function settled(test){for(let i=0;i<30&&!test();i++)await tick();assert(t
  // Reimport only existing always rebuilds the complete catalog, even with 0 viewer updates.
  calls.length=0;
  await el('previewReaders').onclick();
- assert.deepEqual(calls,['check'],'Check existing must perform only one read-only check');calls.length=0;
+ assert.deepEqual(calls,['check'],'Check existing performs one read-only inventory with progress');
+ assert.equal(el('existingProgress').value,el('existingProgress').max,'Check progress reaches the published total');
+ assert.match(el('existingProgressTitle').textContent,/complete/i);
+ calls.length=0;
  assert.equal(pickerCalls,1,'Existing scan stays under archived_emails without another chooser');
  assert.equal(el('upgradeReaders').disabled,false);
  await el('upgradeReaders').onclick();
- assert.deepEqual(calls,['rebuild'],'Rebuild must not update message HTML');
+ assert.deepEqual(calls,['rebuild'],'Rebuild checks content and updates only indexes');
+ assert.equal(el('existingProgress').value,el('existingProgress').max,'Rebuild progress includes final publication tick');
+ assert.match(el('existingProgressTitle').textContent,/complete/);
  assert.match(el('catalogStatus').textContent,/Rebuilt index/);
- calls.length=0;await el('refreshViewers').onclick();assert.deepEqual(calls,['update'],'Appearance update is a separate explicit action');
+ assert.equal(typeof el('refreshViewers').onclick,'undefined','Removed appearance action has no event handler');
  // A different OS directory is rejected before filesystem writes.
  const old=window.ArchiveUI.root;
  currentChoice=wrong;
@@ -123,6 +125,6 @@ async function settled(test){for(let i=0;i<30&&!test();i++)await tick();assert(t
  console.log('PASS file:// Browse uses archived_emails/ without permissions');
  console.log('PASS Start import and Check existing never open the folder chooser; one explicit grant is reused');
  console.log('PASS authorized import writes only beneath archived_emails/');
- console.log('PASS Rebuild index and optional appearance update are independent');
+ console.log('PASS Check and Rebuild progress bars finish; no appearance maintenance remains');
  console.log('PASS no arbitrary folder selector or app-copy controls');
 })().catch(e=>{console.error(e);process.exitCode=1;});
